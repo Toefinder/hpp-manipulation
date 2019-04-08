@@ -29,7 +29,7 @@
 # ifndef HPP_MANIPULATION_RMR_STAR_HH
 # define HPP_MANIPULATION_RMR_STAR_HH
 
-
+#include <hpp/constraints/solver/hierarchical-iterative.hh>
 #include <hpp/core/path-planner.hh>
 #include "hpp/manipulation/graph/statistics.hh"
 #include "hpp/manipulation/graph/fwd.hh"
@@ -72,9 +72,7 @@ namespace hpp {
 	public:
 
 	  ///Empty constructor
-	  ContactState () : state_ (), rightHandSide_ (), loopEdgeConstraint_ (), config_ (), rhsMap_()
-	  {
-	  }
+	  ContactState ();
 
 	  ///Constructor
 	  /// \param state the configuration's state
@@ -82,32 +80,7 @@ namespace hpp {
 	  /// \param constraint the loop constraint of the state
 	  ContactState (const graph::StatePtr_t& state,
 			ConfigurationIn_t config,
-			const core::ConstraintSetPtr_t& constraints) :
-	    state_ (state), rightHandSide_ (),
-	    loopEdgeConstraint_ (constraints), config_(config),rhsMap_()
-	  {
-
-	    assert (loopEdgeConstraint_);
-	    assert (loopEdgeConstraint_->configProjector ());
-	    rightHandSide_ = loopEdgeConstraint_->configProjector ()->
-	      rightHandSideFromConfig (config);
-	    core::NumericalConstraints_t num =
-	      constraints->configProjector ()->solver().numericalConstraints();
-
-	      constraints::solver::BySubstitution solver
-	    ( constraints->configProjector ()-> solver ());
-
-	    for (std::size_t i=0 ; i<num.size() ; i++)
-	      {
-		constraints::ImplicitPtr_t function = num[i];
-		constraints::vectorOut_t rhs= function->nonConstRightHandSide();
-		 solver.getRightHandSide(num[i],rhs);
-
-		rhsMap_.insert
-		  (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
-		   (function,rhs));
-		 }
-	  }
+			const core::ConstraintSetPtr_t& constraints);
 	  /// Return state_
 	  const graph::StatePtr_t& state () const
 	  {

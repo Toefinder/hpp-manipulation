@@ -32,6 +32,8 @@
 
 #include <hpp/pinocchio/configuration.hh>
 
+#include <hpp/constraints/solver/by-substitution.hh>
+
 #include <hpp/core/configuration-shooter.hh>
 #include <hpp/core/config-validations.hh>
 #include <hpp/core/edge.hh>
@@ -48,6 +50,40 @@
 
 namespace hpp {
   namespace manipulation {
+
+    RMRStar::ContactState::ContactState () : state_ (), rightHandSide_ (),
+                                             loopEdgeConstraint_ (), config_ (),
+                                             rhsMap_()
+    {
+    }
+
+    RMRStar::ContactState::ContactState
+    (const graph::StatePtr_t& state, ConfigurationIn_t config,
+     const core::ConstraintSetPtr_t& constraints) :
+      state_ (state), rightHandSide_ (),
+      loopEdgeConstraint_ (constraints), config_(config),rhsMap_()
+    {
+
+      assert (loopEdgeConstraint_);
+      assert (loopEdgeConstraint_->configProjector ());
+      rightHandSide_ = loopEdgeConstraint_->configProjector ()->
+        rightHandSideFromConfig (config);
+      core::NumericalConstraints_t num =
+        constraints->configProjector ()->solver().numericalConstraints();
+
+      constraints::solver::BySubstitution solver
+        ( constraints->configProjector ()-> solver ());
+
+      for (std::size_t i=0 ; i<num.size() ; i++) {
+        constraints::ImplicitPtr_t function = num[i];
+        constraints::vectorOut_t rhs= function->nonConstRightHandSide();
+        solver.getRightHandSide(num[i],rhs);
+
+        rhsMap_.insert
+          (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
+           (function,rhs));
+      }
+    }
 
     ////////////////////////////////////////////////////////////////////////////
     RMRStarPtr_t RMRStar::create (const core::Problem& problem,
