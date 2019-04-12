@@ -26,8 +26,6 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#define HPP_DEBUG
-
 #include "hpp/manipulation/rmr-star.hh"
 
 #include <hpp/pinocchio/configuration.hh>
@@ -508,7 +506,8 @@ namespace hpp {
       //Find intersec waypoint
       //////////////////////////////////////////////////////////////
 
-      for (std::size_t Waypoint=0; Waypoint<nbOfWaypoints ; Waypoint++)
+      for (size_type Waypoint=0; Waypoint < (size_type) nbOfWaypoints;
+           Waypoint++)
 	{
 	  const char *intersec ="intersec";
 	  const char *waypointName=
@@ -893,8 +892,8 @@ namespace hpp {
 	hppDout (info,"path=NULL");
       }
       else {
-
-	if (pathProjector->apply(path,projpath))
+        projpath = path;
+	if ((!pathProjector) || (pathProjector->apply(path,projpath)))
 	  {
 
 	    PathValidationPtr_t pathValidation ( edge->pathValidation());
