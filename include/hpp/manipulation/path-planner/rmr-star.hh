@@ -106,17 +106,19 @@ namespace hpp {
 
 	typedef std::map <graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
 	TransitionMap_t transition_;
-
-	typedef std::pair<core::Problem,core::RoadmapPtr_t>ProblemAndRoadmap_t;
-
-	typedef std::multimap <ContactState , ProblemAndRoadmap_t> AssociationMap_t;
-	AssociationMap_t association_;
+        /// Pair (problem, roadmap)
+	typedef std::pair<core::Problem, core::RoadmapPtr_t>
+          ProblemAndRoadmap_t;
+        /// Map of problems and roadmaps indexed by contact states.
+	typedef std::multimap <ContactState , ProblemAndRoadmap_t>
+          LeafRoadmaps_t;
+	LeafRoadmaps_t leafRoadmaps_;
 
 
 	/// Pointer to the problem
         const Problem& pb_;
 
-	/// Pointer to the roadmap
+	/// Pointer to the PathPlanner roadmap as a manipulation::roadmap
         const RoadmapPtr_t roadmap_;
 
 	///Number of sample contact trials before shooting
@@ -149,15 +151,16 @@ namespace hpp {
 	///Build a roadmap in the leaf of the ContactState_ configuration using kPRM*
 	void buildRoadmap ();
 
-	///Copy the intermediary roadmap in the global one
-	void copyRoadmap ();
+      private:
+	///Copy a roadmap in PathPlanner roadmap
+	void copyRoadmapIntoGlobal (const core::RoadmapPtr_t& r);
 
 	///Connect the roadmaps build on different leaves
 	void connectRoadmap ();
 
 	///Store the contactStates, the roadmaps  and the problems associated
 	/// of the visited leaves
-	void associationmap ();
+	void storeLeafRoadmap ();
 
 	///Store in RhsMap_ the functions's right hand side already visited
 	void storeRhs ();

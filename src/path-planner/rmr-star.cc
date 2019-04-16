@@ -52,6 +52,9 @@ namespace hpp {
     namespace pathPlanner {
 
       typedef rmrStar::ContactState ContactState;
+      typedef core::Nodes_t Nodes_t;
+      typedef core::NodePtr_t NodePtr_t;
+      typedef core::Edges_t Edges_t;
 
       RMRStarPtr_t RMRStar::create (const core::Problem& problem,
                                     const core::RoadmapPtr_t& roadmap)
@@ -285,20 +288,22 @@ namespace hpp {
       }
       ////////////////////////////////////////////////////////////////////////////
 
-      void RMRStar::copyRoadmap ()
+      void RMRStar::copyRoadmapIntoGlobal (const core::RoadmapPtr_t& r)
       {
-        const core::Edges_t& edges = interRoadmap_->edges ();
-        core::NodePtr_t node1;
-        core::NodePtr_t node2;
+        const Edges_t& edges = r->edges ();
+        NodePtr_t node1;
+        NodePtr_t node2;
 
-        for  (core::Edges_t::const_iterator itedge = edges.begin();
+        for  (Edges_t::const_iterator itedge = edges.begin();
               itedge != edges.end(); itedge++){
-          node1=roadmap_-> addNode(core::ConfigurationPtr_t(new Configuration_t(*(*itedge)->from()->configuration())));
-          node2=roadmap_->addNode(core::ConfigurationPtr_t(new Configuration_t(*(*itedge)->to()->configuration())));
-
-
-          roadmap()->addEdge (node1, node2,(*itedge)->path());
-
+          node1=roadmap_->addNode
+            (core::ConfigurationPtr_t
+             (new Configuration_t(*(*itedge)->from()->configuration())));
+          node2=roadmap_->addNode
+            (core::ConfigurationPtr_t
+             (new Configuration_t(*(*itedge)->to()->configuration())));
+          HPP_STATIC_PTR_CAST (core::Roadmap, roadmap_)->addEdge
+            (node1, node2,(*itedge)->path());
         }
       }
 
@@ -318,10 +323,10 @@ namespace hpp {
         int max_iter=20;
         core::PathPtr_t path;
 
-        // Iterate through the maps stocked in the association_ map
+        // Iterate through the maps stocked in the leafRoadmaps_ map
 
-        for  (RMRStar::AssociationMap_t::const_iterator itstate =
-                association_.begin(); itstate != association_.end(); itstate++)
+        for  (RMRStar::LeafRoadmaps_t::const_iterator itstate =
+                leafRoadmaps_.begin(); itstate != leafRoadmaps_.end(); itstate++)
           {
             graph::StatePtr_t state = (itstate->first).state ();
             core::ConstraintSetPtr_t constraintEdge =
@@ -331,7 +336,7 @@ namespace hpp {
             Configuration_t config = (itstate->first).config ();
             RhsMap_t rhsMap= (itstate->first).rhsMap ();
             core::RoadmapPtr_t selectRoadmap =itstate -> second.second;
-            core::Nodes_t nodes= selectRoadmap->nodes ();
+            Nodes_t nodes= selectRoadmap->nodes ();
 
             // check if the states are different and neighboors or are similar
             graph::Edges_t connectedEdges =
@@ -422,7 +427,7 @@ namespace hpp {
                   }
               }
           }
-        associationmap();
+        storeLeafRoadmap();
       }
 
 
@@ -581,10 +586,10 @@ namespace hpp {
                         ///////////////////////////////////////////////////////
 
                         if (i!=max_iter){
-                          core::Nodes_t nearNodes =
+                          Nodes_t nearNodes =
                             interRoadmap_->nearestNodes(q_waypoint,k);
 
-                          for (core::Nodes_t :: const_iterator itnode = nearNodes.
+                          for (Nodes_t :: const_iterator itnode = nearNodes.
                                  begin(); itnode !=nearNodes.end(); itnode++ )
                             {
                               core::ConfigurationPtr_t nodeConfig =
@@ -669,10 +674,10 @@ namespace hpp {
                         ////////////////////////////////////////////////////////
 
                         if (i!=max_iter && succeed){
-                          core::Nodes_t nearestNodes =
+                          Nodes_t nearestNodes =
                             roadmap->nearestNodes(q_waypoint,k);
 
-                          for (core::Nodes_t :: const_iterator itnode =
+                          for (Nodes_t :: const_iterator itnode =
                                  nearestNodes.begin(); itnode!=nearestNodes.end();
                                itnode++ )
                             {
@@ -717,11 +722,11 @@ namespace hpp {
            constraintApplied,config,
            valid, state);
         graph::EdgePtr_t edgeTransit =transition_[contactState_.state()];
-        core::Nodes_t nearNodes = interRoadmap_->nearestNodes(q_inter,k);
+        Nodes_t nearNodes = interRoadmap_->nearestNodes(q_inter,k);
         core::ConstraintSetPtr_t constraintTRansit =
           edgeTransit->configConstraint();
 
-        for (core::Nodes_t :: const_iterator itnode = nearNodes.
+        for (Nodes_t :: const_iterator itnode = nearNodes.
                begin(); itnode !=nearNodes.end(); itnode++ )
           {
             core::ConfigurationPtr_t nodeConfig =
@@ -731,10 +736,10 @@ namespace hpp {
 
           }
         graph::EdgePtr_t edge =transition_[state];
-        core::Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
+        Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
         core::ConstraintSetPtr_t constraint =  edge->configConstraint();
 
-        for (core::Nodes_t :: const_iterator it = nearestNodes.
+        for (Nodes_t :: const_iterator it = nearestNodes.
                begin(); it !=nearestNodes.end(); it++ )
           {
             core::ConfigurationPtr_t nodeConfig =
@@ -822,7 +827,7 @@ namespace hpp {
 
         //connect the interRoadmap to the nodeInter
         core::PathPtr_t validPath;
-        core::NodePtr_t nodeConnect=
+        NodePtr_t nodeConnect=
           roadmap_->addNode (core::ConfigurationPtr_t (new Configuration_t(*q1)));
 
         hppDout (info, " node1 " << pinocchio::displayConfig(*configuration));
@@ -855,7 +860,7 @@ namespace hpp {
 #endif
 
               if (valid){
-                core::NodePtr_t node=
+                NodePtr_t node=
                   roadmap_->addNode(core::ConfigurationPtr_t
                                     (new Configuration_t(*configuration)));
 
@@ -925,7 +930,7 @@ namespace hpp {
       }
 
       //////////////////////////////////////////////////////////////////////////
-      void RMRStar::associationmap ()
+      void RMRStar::storeLeafRoadmap ()
       {
 
         //copy the problem and pass the edge contraints
@@ -937,8 +942,9 @@ namespace hpp {
         core::RoadmapPtr_t r = core::Roadmap::create(p.distance(),p.robot());
         r->clear();
 
-        //Create a copy of the interRoadmap that we stock in the associationmap
-        for (core::Nodes_t::const_iterator itnode =interRoadmap_->nodes().begin();
+        // Create a copy of the nodes of interRoadmap that we store in the
+        // leafRoadmaps_
+        for (Nodes_t::const_iterator itnode =interRoadmap_->nodes().begin();
              itnode !=interRoadmap_->nodes().end(); itnode++ )
           {
             r->addNode(core::ConfigurationPtr_t
@@ -947,7 +953,7 @@ namespace hpp {
         RMRStar::ProblemAndRoadmap_t pbRoadmap (p,r) ;
 
         //complete the map with the association ContactState/ProblemAndRoadmap
-        association_.insert
+        leafRoadmaps_.insert
           (std::pair<ContactState,RMRStar::ProblemAndRoadmap_t>
            (contactState_,pbRoadmap));
       }
@@ -1000,8 +1006,8 @@ namespace hpp {
         contactState_=contactStateInit;
 
         buildRoadmap();
-        copyRoadmap ();
-        associationmap();
+        copyRoadmapIntoGlobal (interRoadmap_);
+        storeLeafRoadmap();
         storeRhs();
 
         for (core::NodeVector_t::const_iterator itn
@@ -1023,8 +1029,8 @@ namespace hpp {
           contactState_=contactStateGoal;
 
           buildRoadmap();
-          copyRoadmap ();
-          connectRoadmap();
+          copyRoadmapIntoGlobal (interRoadmap_);
+          connectRoadmap ();
           storeRhs();
         }
         step_=BUILD_ROADMAP;
@@ -1040,7 +1046,7 @@ namespace hpp {
 
             contactState_ = sampleContact();
             buildRoadmap();
-            copyRoadmap ();
+            copyRoadmapIntoGlobal (roadmap_);
             storeRhs();
 
             step_=CONNECT_ROADMAPS;
@@ -1069,7 +1075,7 @@ namespace hpp {
       {
 #ifndef NDEBUG
         dynamic_cast <const manipulation::Problem& > (problem);
-        (HPP_DYNAMIC_PTR_CAST (manipulation::Roadmap, roadmap));
+        assert (HPP_DYNAMIC_PTR_CAST (manipulation::Roadmap, roadmap));
 
 #endif
       }
