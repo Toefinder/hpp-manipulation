@@ -76,7 +76,8 @@ SET (${PROJECT_NAME}_HEADERS
   include/hpp/manipulation/leaf-connected-comp.hh
   include/hpp/manipulation/symbolic-planner.hh
   include/hpp/manipulation/manipulation-planner.hh
-  include/hpp/manipulation/rmr-star.hh
+  include/hpp/manipulation/path-planner/rmr-star.hh
+  include/hpp/manipulation/path-planner/rmr-star/contact-state.hh
   include/hpp/manipulation/graph-path-validation.hh
   include/hpp/manipulation/graph-optimizer.hh
   include/hpp/manipulation/graph/node.hh

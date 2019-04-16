@@ -26,35 +26,37 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# ifndef HPP_MANIPULATION_RMR_STAR_HH
-# define HPP_MANIPULATION_RMR_STAR_HH
+#ifndef HPP_MANIPULATION_PATH_PLANNER_RMR_STAR_HH
+# define HPP_MANIPULATION_PATH_PLANNER_RMR_STAR_HH
 
-#include <hpp/constraints/solver/hierarchical-iterative.hh>
-#include <hpp/core/path-planner.hh>
-#include "hpp/manipulation/graph/statistics.hh"
-#include "hpp/manipulation/graph/fwd.hh"
-#include "hpp/manipulation/fwd.hh"
+# include <hpp/constraints/solver/hierarchical-iterative.hh>
+# include <hpp/core/path-planner.hh>
+# include <hpp/manipulation/graph/statistics.hh>
+# include <hpp/manipulation/graph/fwd.hh>
+# include <hpp/manipulation/fwd.hh>
+# include <hpp/manipulation/path-planner/rmr-star/contact-state.hh>
 
 namespace hpp {
   namespace manipulation {
-
-    /// Implementation of RMR star
-    ///
-    /// This class implements algorithm RMR* as described in
-    /// "Optimal Sampling-Based Manipulation Planner" by P. Schmitt, W. Neubauer,
-    /// K. Wurm, G. Wichert, and W. Burgard.
-    class HPP_MANIPULATION_DLLAPI RMRStar :
-      public core::PathPlanner
-    {
+    namespace pathPlanner {
+      /// Implementation of RMR star
+      ///
+      /// This class implements algorithm RMR* as described in
+      /// "Optimal Sampling-Based Manipulation Planner" by P. Schmitt,
+      /// W. Neubauer, K. Wurm, G. Wichert, and W. Burgard.
+      class HPP_MANIPULATION_DLLAPI RMRStar : public core::PathPlanner
+      {
       public:
+
+        typedef rmrStar::ContactState ContactState;
 
         /// Create an instance and return a shared pointer to the instance
         /// \param problem reference to the problem to be solved,
         /// \param roadmap roadmap to be expanded.
         static RMRStarPtr_t create (const core::Problem& problem,
-            const core::RoadmapPtr_t& roadmap);
+                                    const core::RoadmapPtr_t& roadmap);
 
-	 /// One step of extension.
+        /// One step of extension.
         ///
         /// A set of constraints is chosen using the graph of constraints.
         /// A constraint extension is done using a chosen set.
@@ -62,85 +64,18 @@ namespace hpp {
         virtual void oneStep ();
 
 	/// Map linking functions and its right hand side
-	typedef std::multimap <constraints::ImplicitPtr_t,constraints::vector_t> RhsMap_t;
+	typedef std::multimap <constraints::ImplicitPtr_t,
+                               constraints::vector_t> RhsMap_t;
 	RhsMap_t RhsMap_;
-
-	/// Structure containing a configuration, its state , its global right hand side
-	/// the loop edge of its state and the map linking each constraint function of
-	///the configuration to its right hand side
-	struct ContactState {
-	public:
-
-	  ///Empty constructor
-	  ContactState ();
-
-	  ///Constructor
-	  /// \param state the configuration's state
-	  /// \param config the configuration
-	  /// \param constraint the loop constraint of the state
-	  ContactState (const graph::StatePtr_t& state,
-			ConfigurationIn_t config,
-			const core::ConstraintSetPtr_t& constraints);
-	  /// Return state_
-	  const graph::StatePtr_t& state () const
-	  {
-	    assert (state_);
-	    return state_;
-	  }
-
-	  /// Return rightHandSide_
-	  const constraints::vector_t& rightHandSide () const
-	  {
-	    assert (state_);
-	    return rightHandSide_;
-	  }
-
-	  /// Return loopEdgeConstraint_
-	  const core::ConstraintSetPtr_t& constraints () const
-	  {
-	    assert (state_);
-	    return loopEdgeConstraint_;
-	  }
-
-	  /// Return config_
-	  const Configuration_t& config () const
-	  {
-	    assert (state_);
-	    return config_;
-	  }
-
-	  ///Return rhsMap_
-	  const RhsMap_t& rhsMap () const
-	  {
-	    assert (state_);
-
-	    return rhsMap_;
-	  }
-
-	private:
-	  graph::StatePtr_t state_;
-	  constraints::vector_t rightHandSide_;
-	  core::ConstraintSetPtr_t loopEdgeConstraint_;
-	  Configuration_t config_;
-	  RhsMap_t rhsMap_;
-	};
-
-	/// Compare to ContactState and return true if a is smaller than b
-	bool smaller (const RMRStar::ContactState& a,
-		      const RMRStar::ContactState& b);
 
      protected:
         /// Protected constructor
         RMRStar (const core::Problem& problem,
 		 const core::RoadmapPtr_t& roadmap);
 
-     private:
+      private:
 
-	//////////////////////////////////////////////////////////////////////////////
-	/////////////////////Members declaration
-	//////////////////////////////////////////////////////////////////////////////
-
-	///Pointer to the kPrmStar method
+	/// Pointer to the kPrmStar method
 	core::pathPlanner::kPrmStarPtr_t kPrm_;
 
 	///Pointer to the copy of the loop-edge constraints
@@ -156,7 +91,7 @@ namespace hpp {
 	mutable ConfigurationPtr_t q_rand_;
 
 	///current contactState
-	RMRStar::ContactState contactState_;
+	ContactState contactState_;
 
 	///Pointer to the graph problem
 	graph::GraphPtr_t graph_;
@@ -304,11 +239,8 @@ namespace hpp {
 	       constraints::solver::HierarchicalIterative::Status constraintApplied,
 	       core:: Configuration_t config, bool valid, graph::StatePtr_t state);
 
-    }; // class RMRStar
-    bool operator< (const RMRStar::ContactState& c1 ,
-		    const RMRStar::ContactState& c2);
-
+      }; // class RMRStar
+    } // namespace pathPlanning
   } // namespace manipulation
 } // namespace hpp
-
-#endif // HPP_MANIPULATION_RMR_Star_HH
+#endif
