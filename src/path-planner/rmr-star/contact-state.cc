@@ -28,7 +28,12 @@
 
 #include <hpp/manipulation/path-planner/rmr-star/contact-state.hh>
 
+#include <hpp/pinocchio/device.hh>
+
 #include <hpp/constraints/solver/by-substitution.hh>
+
+#include <hpp/core/config-projector.hh>
+#include <hpp/core/constraint-set.hh>
 
 #include <hpp/core/constraint-set.hh>
 #include <hpp/core/config-projector.hh>
@@ -37,37 +42,63 @@ namespace hpp {
   namespace manipulation {
     namespace pathPlanner {
       namespace rmrStar {
-        ContactState::ContactState () : state_ (), rightHandSide_ (),
-                                        loopEdgeConstraint_ (), config_ (),
-                                        rhsMap_()
+        static core::ConstraintSetPtr_t emptyConstraints ()
+        {
+          pinocchio::DevicePtr_t dev (pinocchio::Device::create (""));
+          core::ConstraintSetPtr_t cs (core::ConstraintSet::create (dev, ""));
+          core::ConfigProjectorPtr_t proj
+            (core::ConfigProjector::create (dev, "", 0, 0));
+          cs->addConstraint (proj);
+          return cs;
+        }
+        ContactState::ContactState () :
+          state_ (), rightHandSide_ (), constraints_ (emptyConstraints ()),
+          solver_ (&const_cast <BySubstitution&>
+                   (constraints_->configProjector ()->solver ())), config_ (),
+          rhsMap_()
         {
         }
 
         ContactState::ContactState
         (const graph::StatePtr_t& state, ConfigurationIn_t config,
          const core::ConstraintSetPtr_t& constraints) :
-          state_ (state), rightHandSide_ (),
-          loopEdgeConstraint_ (constraints), config_(config),rhsMap_()
+          state_ (state), rightHandSide_ (), constraints_ (constraints),
+          solver_ (&const_cast <BySubstitution&>
+                   (constraints->configProjector ()->solver ())),
+          config_(config), rhsMap_()
         {
-          assert (loopEdgeConstraint_);
-          assert (loopEdgeConstraint_->configProjector ());
-          rightHandSide_ = loopEdgeConstraint_->configProjector ()->
-            rightHandSideFromConfig (config);
-          core::NumericalConstraints_t num =
-            constraints->configProjector ()->solver().numericalConstraints();
-
-          constraints::solver::BySubstitution solver
-            ( constraints->configProjector ()-> solver ());
+          rightHandSide_ =
+            solver_->rightHandSideFromConfig (config);
+          core::NumericalConstraints_t num = solver_->numericalConstraints();
 
           for (std::size_t i=0 ; i<num.size() ; i++) {
             constraints::ImplicitPtr_t function = num[i];
             constraints::vectorOut_t rhs= function->nonConstRightHandSide();
-            solver.getRightHandSide(num[i],rhs);
+            solver_->getRightHandSide(num[i],rhs);
 
             rhsMap_.insert
               (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
                (function,rhs));
           }
+        }
+
+        ContactState::ContactState (const ContactState& other) :
+          state_ (other.state_), rightHandSide_ (other.rightHandSide_),
+          constraints_ (other.constraints_), solver_ (other.solver_),
+          config_ (other.config_), rhsMap_ (other.rhsMap_)
+        {
+        }
+
+        ContactState& ContactState::operator=
+        (const ContactState& other)
+        {
+          state_ = other.state_;
+          rightHandSide_ = other.rightHandSide_;
+          constraints_ = other.constraints_;
+          solver_ = other.solver_;
+          config_ = other.config_;
+          rhsMap_ = other.rhsMap_;
+          return *this;
         }
 
         ////////////////////////////////////////////////////////////////////////////

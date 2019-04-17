@@ -80,9 +80,6 @@ namespace hpp {
 	/// Pointer to the kPrmStar method
 	core::pathPlanner::kPrmStarPtr_t kPrm_;
 
-	///Pointer to the copy of the loop-edge constraints
-	core::ConstraintSetPtr_t copyEdgeConstraints_;
-
 	///Pointer to the edge steering method
 	core::SteeringMethodPtr_t edgeSteeringMethod_;
 

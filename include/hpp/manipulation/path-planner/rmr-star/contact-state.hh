@@ -30,6 +30,7 @@
 # define HPP_MANIPULATION_RMR_STAR_CONTACT_STATE_HH
 
 # include <hpp/manipulation/fwd.hh>
+# include <hpp/constraints/solver/by-substitution.hh>
 # include <hpp/manipulation/graph/fwd.hh>
 
 namespace hpp {
@@ -48,6 +49,7 @@ namespace hpp {
 	///the configuration to its right hand side
 	class HPP_MANIPULATION_DLLAPI ContactState
         {
+          typedef constraints::solver::BySubstitution BySubstitution;
 	public:
           /// Map linking constraints and their right hand side
           typedef std::multimap <constraints::ImplicitPtr_t,
@@ -59,10 +61,14 @@ namespace hpp {
 	  ///Constructor
 	  /// \param state the configuration's state
 	  /// \param config the configuration
-	  /// \param constraint the loop constraint of the state
+	  /// \param constraints the loop constraint of the state
 	  ContactState (const graph::StatePtr_t& state,
 			ConfigurationIn_t config,
 			const core::ConstraintSetPtr_t& constraints);
+
+          /// Copy constructor
+          ContactState (const ContactState& other);
+
 	  /// Return state_
 	  const graph::StatePtr_t& state () const
 	  {
@@ -77,11 +83,17 @@ namespace hpp {
 	    return rightHandSide_;
 	  }
 
+          /// Return constraint set containing the solver
+          core::ConstraintSetPtr_t constraints () const
+          {
+            return constraints_;
+          }
+
 	  /// Return loopEdgeConstraint_
-	  const core::ConstraintSetPtr_t& constraints () const
+          const BySubstitution& solver () const
 	  {
 	    assert (state_);
-	    return loopEdgeConstraint_;
+	    return *solver_;
 	  }
 
 	  /// Return config_
@@ -99,10 +111,13 @@ namespace hpp {
 	    return rhsMap_;
 	  }
 
+          ContactState& operator= (const ContactState& constactState);
+
 	private:
 	  graph::StatePtr_t state_;
 	  constraints::vector_t rightHandSide_;
-	  core::ConstraintSetPtr_t loopEdgeConstraint_;
+          core::ConstraintSetPtr_t constraints_;
+	  BySubstitution* solver_;
 	  Configuration_t config_;
 	  RhsMap_t rhsMap_;
 	};
@@ -113,5 +128,5 @@ namespace hpp {
     } // namespace pathPlanner
   } // namespace manipulation
 } // namespace hpp
-      
+
 #endif // HPP_MANIPULATION_RMR_STAR_CONTACT_STATE_HH
