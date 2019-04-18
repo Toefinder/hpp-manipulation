@@ -316,17 +316,12 @@ namespace hpp {
 
       ////////////////////////////////////////////////////////////////////////////
 
-      void RMRStar::connectRoadmap () {
-        PathProjectorPtr_t pathProjector
-          (manipulationProblem_.pathProjector ());
+      void RMRStar::connectRoadmap ()
+      {
         core::PathPtr_t projpath;
-        ConfigurationShooterPtr_t shooter
-          (manipulationProblem_.configurationShooter ());
-
         core:: ValidationReportPtr_t validationReport;
         size_type k=problem().getParameter("RMR*/numberOfConnectNodes").intValue();
 
-        int max_iter=20;
         core::PathPtr_t path;
 
         // Iterate through all pre-existing leaf roadmaps and try to connect
@@ -338,33 +333,26 @@ namespace hpp {
           // the loop iterator "itstate".
 
           // Current contact state
-          const ContactState& contactState (itstate->first);
-          graph::StatePtr_t state = contactState.state ();
-          // Right hand side of current leaf
-          constraints::vector_t rhs (contactState.rightHandSide ());
-          // Configuration on current leaf
-          Configuration_t config (contactState.config ());
+          const ContactState&  currentLeaf (itstate->first);
+          graph::StatePtr_t currentState = currentLeaf.state ();
           // Current mapping of right hand sides
-          ContactState::RightHandSides_t latestLeafRhs
-            (contactState.rightHandSides ());
+          ContactState::RightHandSides_t currentLeafRhs
+            (currentLeaf.rightHandSides ());
           // current roadmap
           const core::RoadmapPtr_t& currentRoadmap (itstate->second.second);
           Nodes_t nodes= currentRoadmap->nodes ();
 
           // check if the states are different and neighboors or are similar
           graph::Edges_t connectedEdges =
-            graph_->getEdges(latestLeaf_.state (),state);
+            graph_->getEdges(latestLeaf_.state (),currentState);
 
           assert (connectedEdges.size()<=1);
 
           // Whether states of latest leaf and current leaf are neighbors
           // and different
           bool neighborStates = (!connectedEdges.empty ()) &&
-            (latestLeaf_.state () !=state);
+            (latestLeaf_.state () !=currentState);
           bool valid=false;
-
-          HierarchicalIterative::Status constraintApplied
-            (HierarchicalIterative::INFEASIBLE);
 
           // Get solver projecting on latest leaf explored
           constraints::solver::BySubstitution latestLeafSolver
@@ -372,15 +360,7 @@ namespace hpp {
 
           // Get solver projecting on current leaf
           constraints::solver::BySubstitution currentLeafSolver
-            (contactState.solver ());
-
-          // Get the numerical constraints of currentLeaf
-          const NumericalConstraints_t& currentLeafNumericalConstraints
-            (contactState.solver ().numericalConstraints());
-
-          // Get the numerical constraints of latest leaf
-          const NumericalConstraints_t& latestLeafNumericalConstraints
-            (latestLeaf_.solver ().numericalConstraints());
+            (currentLeaf.solver ());
 
           bool rhsEqual=true;
           pinocchio::value_type errorThreshold
@@ -389,8 +369,8 @@ namespace hpp {
           for (ContactState::RightHandSides_t::const_iterator it
                  (latestLeaf_.rightHandSides ().begin());
                it!=latestLeaf_.rightHandSides ().end(); ++it) {
-            for (ContactState::RightHandSides_t::const_iterator i=latestLeafRhs.begin();
-                 i!=latestLeafRhs.end(); ++i) {
+            for (ContactState::RightHandSides_t::const_iterator i=currentLeafRhs.begin();
+                 i!=currentLeafRhs.end(); ++i) {
               if (it->first == i->first && it->second!=i->second ) {
                 //les fonctions sont egale mais pas les rhs
                 rhsEqual=false;
@@ -405,35 +385,34 @@ namespace hpp {
           // states and accessible, or
           // are on he same leaf of the same state.
           if ((neighborStates && rhsEqual) ||
-              (latestLeaf_.state () == state &&
-               latestLeaf_.rightHandSide ().isApprox (rhs, errorThreshold))) {
-            if (latestLeaf_.state () == state &&
-                latestLeaf_.rightHandSide ().isApprox (rhs, errorThreshold)) {
+              (latestLeaf_.state () == currentState &&
+               latestLeaf_.rightHandSide ().isApprox
+               (currentLeaf.rightHandSide (), errorThreshold))) {
+            if (latestLeaf_.state () == currentState &&
+                latestLeaf_.rightHandSide ().isApprox
+                (currentLeaf.rightHandSide (), errorThreshold)) {
               hppDout (info, displayConfig (latestLeaf_.rightHandSide ()));
-              hppDout (info, displayConfig (rhs));
+              hppDout (info, displayConfig (currentLeaf.rightHandSide ()));
             }
             graph::WaypointEdgePtr_t waypointEdge
               (HPP_DYNAMIC_PTR_CAST(graph::WaypointEdge,connectedEdges[0]));
 
             if (waypointEdge) {
-              assert (latestLeaf_.state ()!=state);
+              assert (latestLeaf_.state ()!=currentState);
               hppDout(info, "Problème avec Waypoints");
 
               connectStatesByWaypoints
-                (waypointEdge, currentLeafNumericalConstraints,
-                 latestLeafNumericalConstraints,
-                 latestLeafRhs, max_iter, k, validationReport, valid,
-                 constraintApplied, projpath, pathProjector, shooter,
-                 currentRoadmap, state, config);
+                (waypointEdge, currentLeaf, latestLeaf_,
+                 k, validationReport, valid, projpath, currentRoadmap,
+                 currentState);
             }
             else {
               hppDout(info, "Problème sans Waypoints");
 
               connectDirectStates
-                (currentLeafNumericalConstraints,
-                 latestLeafNumericalConstraints, validationReport, max_iter, k,
-                 shooter, constraintApplied, path, projpath, pathProjector,
-                 config, valid, state, currentRoadmap);
+                (currentLeaf, latestLeaf_, validationReport, k,
+                 path, projpath, valid, currentState,
+                 currentRoadmap);
             }
           }
         }
@@ -442,16 +421,21 @@ namespace hpp {
 
       void RMRStar::connectStatesByWaypoints
       (const graph::WaypointEdgePtr_t& waypointEdge,
-       const NumericalConstraints_t& currentLeafNumericalConstraints,
-       const NumericalConstraints_t& latestLeafNumericalConstraints,
-       const ContactState::RightHandSides_t& latestLeafRhs, int max_iter,
-       size_type k, core::ValidationReportPtr_t& validationReport, bool valid,
-       HierarchicalIterative::Status constraintApplied,
-       core::PathPtr_t& projpath, const PathProjectorPtr_t& pathProjector,
-       const ConfigurationShooterPtr_t& shooter,
+       const ContactState& currentLeaf, const ContactState& latestLeaf,
+       size_type k,
+       core::ValidationReportPtr_t& validationReport, bool valid,
+       core::PathPtr_t& projpath,
        const core::RoadmapPtr_t& roadmap,
-       const graph::StatePtr_t& state, const Configuration_t& config)
+       const graph::StatePtr_t& currentState)
       {
+        size_type max_iter (20);
+        assert (currentState == waypointEdge->to ());
+        // Current mapping of right hand sides
+        ContactState::RightHandSides_t currentLeafRhs
+          (currentLeaf.rightHandSides ());
+        HierarchicalIterative::Status constraintApplied
+          (HierarchicalIterative::INFEASIBLE);
+        // Configuration on current leaf
         core::ConfigValidationsPtr_t configValidations
           (manipulationProblem_.configValidations ());
 
@@ -479,10 +463,8 @@ namespace hpp {
             while (succeed ==false) {
               valid=false;
               q_waypointInter = createInterStateNode
-                (currentLeafNumericalConstraints,
-                 latestLeafNumericalConstraints,
-                 configValidations, validationReport,max_iter,shooter,
-                 constraintApplied,config, valid,state);
+                (currentLeaf, latestLeaf, configValidations, validationReport,
+                 valid, currentState);
 
               if (*q_waypointInter !=
                   *(roadmap_->initNode ()->configuration())) {
@@ -502,7 +484,7 @@ namespace hpp {
                   graph::EdgePtr_t forwardEdge =
                     waypointEdge->waypoint(w);
                   graph::Edges_t edges =
-                    graph_->getEdges(state, latestLeaf_.state());
+                    graph_->getEdges(currentState, latestLeaf_.state());
                   assert(edges.size()==1);
 
                   graph::WaypointEdgePtr_t backwardWaypointEdge =
@@ -526,8 +508,8 @@ namespace hpp {
                                               it->second);
                       }
                     }
-                    for (ContactState::RightHandSides_t::const_iterator i=latestLeafRhs.begin();
-                         i!=latestLeafRhs.end(); ++i) {
+                    for (ContactState::RightHandSides_t::const_iterator i=currentLeafRhs.begin();
+                         i!=currentLeafRhs.end(); ++i) {
                       if (solver.numericalConstraints()[j]== i->first) {
                         solver.rightHandSide
                           (solver.numericalConstraints()[j], i->second);
@@ -557,7 +539,7 @@ namespace hpp {
                     hppDout(info, "success = "<<succeed);
                   } else {
                     succeed=true;
-                    connectConfigToNode (forwardEdge, path, pathProjector,
+                    connectConfigToNode (forwardEdge, path,
                                          projpath, q_nextWaypoint, q_waypoint);
 
                     *q_waypoint=*q_nextWaypoint;
@@ -577,8 +559,7 @@ namespace hpp {
                     ConfigurationPtr_t nodeConfig =
                       (*itnode)->configuration();
 
-                    connectConfigToNode (waypointEdge->waypoint(0), path,
-                                         pathProjector, projpath, nodeConfig,
+                    connectConfigToNode (waypointEdge->waypoint(0), path, projpath, nodeConfig,
                                          q_waypoint);
                   }
                 }
@@ -606,8 +587,8 @@ namespace hpp {
                                               it->second);
                       }
                     }
-                    for (ContactState::RightHandSides_t::const_iterator i=latestLeafRhs.begin();
-                         i!=latestLeafRhs.end(); ++i) {
+                    for (ContactState::RightHandSides_t::const_iterator i=currentLeafRhs.begin();
+                         i!=currentLeafRhs.end(); ++i) {
                       if (solver.numericalConstraints()[j] == i->first) {
                         solver.rightHandSide (solver.numericalConstraints()[j],
                                               i->second);
@@ -638,7 +619,7 @@ namespace hpp {
                     hppDout(info, "succeed = "<<succeed);
 
                   } else {
-                    connectConfigToNode (Edge, path, pathProjector, projpath,
+                    connectConfigToNode (Edge, path, projpath,
                                          q_waypoint, q_nextWaypoint);
 
                     *q_waypoint=*q_nextWaypoint;
@@ -657,7 +638,7 @@ namespace hpp {
                     ConfigurationPtr_t nodeConfig ((*itnode)->configuration());
 
                     connectConfigToNode (waypointEdge->waypoint(nbOfWaypoints),
-                                         path, pathProjector, projpath,
+                                         path, projpath,
                                          q_waypoint,nodeConfig);
                   }
                 }
@@ -676,24 +657,16 @@ namespace hpp {
       ////////////////////////////////////////////////////////////////////////
 
       void RMRStar::connectDirectStates
-      (const NumericalConstraints_t& currentLeafNumericalConstraints,
-       const NumericalConstraints_t& latestLeafNumericalConstraints,
-       core::ValidationReportPtr_t& validationReport,
-       int max_iter , size_type k,
-       const ConfigurationShooterPtr_t& shooter,
-       HierarchicalIterative::Status constraintApplied,
-       core::PathPtr_t& path, core::PathPtr_t& projpath,
-       const core::PathProjectorPtr_t& pathProjector,
-       const core:: Configuration_t& config, bool valid,
-       const graph::StatePtr_t& state, const core::RoadmapPtr_t& roadmap)
+      (const ContactState& currentLeaf, const ContactState& latestLeaf,
+       core::ValidationReportPtr_t& validationReport, size_type k,
+       core::PathPtr_t& path, core::PathPtr_t& projpath, bool valid,
+       const graph::StatePtr_t& currentState, const core::RoadmapPtr_t& roadmap)
       {
         core::ConfigValidationsPtr_t configValidations
           (manipulationProblem_.configValidations ());
         ConfigurationPtr_t q_inter = createInterStateNode
-          (currentLeafNumericalConstraints, latestLeafNumericalConstraints,
-           configValidations, validationReport,max_iter,shooter,
-           constraintApplied,config,
-           valid, state);
+          (currentLeaf, latestLeaf, configValidations, validationReport,
+           config, valid, currentState);
         graph::EdgePtr_t edgeTransit =transition_[latestLeaf_.state()];
         Nodes_t nearNodes = latestRoadmap_->nearestNodes(q_inter,k);
         core::ConstraintSetPtr_t constraintTRansit =
@@ -705,10 +678,9 @@ namespace hpp {
             ConfigurationPtr_t nodeConfig =
               (*itnode)->configuration();
 
-            connectConfigToNode (edgeTransit,path,pathProjector,projpath,q_inter,nodeConfig);
-
+            connectConfigToNode (edgeTransit,path,projpath,q_inter,nodeConfig);
           }
-        graph::EdgePtr_t edge =transition_[state];
+        graph::EdgePtr_t edge =transition_[currentState];
         Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
         core::ConstraintSetPtr_t constraint =  edge->configConstraint();
 
@@ -718,24 +690,30 @@ namespace hpp {
             ConfigurationPtr_t nodeConfig =
               (*it)->configuration();
 
-            connectConfigToNode (edge,path,pathProjector,projpath,q_inter,nodeConfig);
+            connectConfigToNode (edge,path,projpath,q_inter,nodeConfig);
           }
       }
+
       ///////////////////////////////////////////////////////////////////////
 
       ConfigurationPtr_t RMRStar::createInterStateNode
-      (const NumericalConstraints_t& currentLeafNumericalConstraints,
-       const NumericalConstraints_t& latestLeafNumericalConstraints,
+      (const ContactState& currentLeaf, const ContactState& latestLeaf,
        const core::ConfigValidationsPtr_t& configValidations,
-       core::ValidationReportPtr_t& validationReport,
-       int max_iter, const ConfigurationShooterPtr_t& shooter,
-       HierarchicalIterative::Status constraintApplied,
-       const core::Configuration_t& config, bool valid,
-       const graph::StatePtr_t& state)
+       core::ValidationReportPtr_t& validationReport, bool valid,
+       const graph::StatePtr_t& currentState)
       {
+        const NumericalConstraints_t& currentLeafNumericalConstraints
+          (currentLeaf.solver ().numericalConstraints());
+        // Get the numerical constraints of latest leaf
+        const NumericalConstraints_t& latestLeafNumericalConstraints
+          (latestLeaf.solver ().numericalConstraints());
+        ConfigurationShooterPtr_t shooter
+          (manipulationProblem_.configurationShooter ());
+        HierarchicalIterative::Status constraintApplied
+          (HierarchicalIterative::INFEASIBLE);
         ConfigurationPtr_t q_inter;
-        int i= 0;
-        hppDout(info,"state "<<state->name());
+        size_type i= 0;
+        hppDout(info,"currentState "<<currentState->name());
         hppDout(info,"latestLeaf_ "<<latestLeaf_.state()->name());
 
         constraints::solver::BySubstitution solver (latestLeaf_.solver ());
@@ -752,10 +730,11 @@ namespace hpp {
         }
         for (std::size_t j=0; j<currentLeafNumericalConstraints.size(); j++){
           solver.rightHandSideFromConfig (currentLeafNumericalConstraints[j],
-                                          config);
+                                          currentLeaf.config ());
         }
         hppDout(info,"solver inter state) "<<solver);
-        while ((valid==false) && i<max_iter)
+        size_type max_iter (20);
+        while ((valid==false) && i < max_iter)
           {
             //Shoot random configuration
             q_inter= shooter->shoot();
@@ -772,7 +751,7 @@ namespace hpp {
           }
         hppDout (info,"i="<<i);
         hppDout (info,"connect states "<<latestLeaf_.state()->name()<<
-                 "  state "<<state->name());
+                 "  currentState "<<currentState->name());
         hppDout (info,"q_inter="<< displayConfig (*q_inter));
         hppDout (info,"constraintApplied="<<constraintApplied);
 
@@ -790,11 +769,12 @@ namespace hpp {
 
       void RMRStar::connectConfigToNode
       (const graph::EdgePtr_t& edge, core::PathPtr_t&  path,
-       const core::PathProjectorPtr_t& pathProjector, core::PathPtr_t& projpath,
+       core::PathPtr_t& projpath,
        const ConfigurationPtr_t& q1,
        const ConfigurationPtr_t& configuration)
       {
-
+        PathProjectorPtr_t pathProjector
+          (manipulationProblem_.pathProjector ());
         //connect the interRoadmap to the nodeInter
         core::PathPtr_t validPath;
         NodePtr_t nodeConnect=

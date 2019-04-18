@@ -181,16 +181,11 @@ namespace hpp {
 	/// \param k the nb of nearest nodes we connect to the intersection node
 	/// \param state the state of the roadmap leaf
 	void connectDirectStates
-	  (const constraints::NumericalConstraints_t& constraints,
-           const constraints::NumericalConstraints_t& transitConstraints,
-           core:: ValidationReportPtr_t& validationReport,
-           int max_iter , size_type  k,
-           const ConfigurationShooterPtr_t& shooter,
-           HierarchicalIterative::Status constraintApplied,
-           core::PathPtr_t& path, core::PathPtr_t& projpath,
-           const PathProjectorPtr_t& pathProjector,
-           const Configuration_t& config, bool valid,
-           const graph::StatePtr_t& state,
+          (const ContactState& currentLeaf, const ContactState& latestLeaf,
+           core::ValidationReportPtr_t& validationReport,
+           size_type k,
+           core::PathPtr_t& path, core::PathPtr_t& projpath, bool valid,
+           const graph::StatePtr_t& currentState,
            const core::RoadmapPtr_t& roadmap);
 
 	/// Connect two roadmaps (latestRoadmap_ and an other one)
@@ -205,16 +200,13 @@ namespace hpp {
 	/// \param k the nb of nearest nodes we connect to the first and last waypoint
 	/// \param state the state of the roadmap leaf
 	void connectStatesByWaypoints
-	  (const graph::WaypointEdgePtr_t& waypointEdge,
-           const constraints::NumericalConstraints_t& constraints,
-           const constraints::NumericalConstraints_t& transitConstraints,
-           const ContactState::RightHandSides_t& rhsMap, int max_iter,
-           size_type k, core:: ValidationReportPtr_t& validationReport,
-           bool valid, HierarchicalIterative::Status constraintApplied,
-           core::PathPtr_t& projpath, const PathProjectorPtr_t& pathProjector,
-           const ConfigurationShooterPtr_t& shooter,
+          (const graph::WaypointEdgePtr_t& waypointEdge,
+           const ContactState& currentLeaf, const ContactState& latestLeaf,
+           size_type k,
+           core::ValidationReportPtr_t& validationReport, bool valid,
+           core::PathPtr_t& projpath,
            const core::RoadmapPtr_t& roadmap,
-           const graph::StatePtr_t& state, const Configuration_t& config);
+           const graph::StatePtr_t& currentState);
 
 	///Add two nodes to the roadmap_ and create an edge between them
       /// \param edge edge of the graph between the respective states of the nodes
@@ -222,22 +214,16 @@ namespace hpp {
       /// \param configuration the configuration of the second node
 	 void connectConfigToNode
            (const graph::EdgePtr_t& edge, core::PathPtr_t&  path,
-            const core::PathProjectorPtr_t& pathProjector,
             core::PathPtr_t& projpath, const ConfigurationPtr_t& q1,
             const ConfigurationPtr_t& configuration);
 
 	 ///Shoot a random config in the intersection of two leaves
          ConfigurationPtr_t createInterStateNode
-           (const constraints::NumericalConstraints_t& constraints,
-            const constraints::NumericalConstraints_t& transitConstraints,
+           (const ContactState& currentLeaf, const ContactState& latestLeaf,
             const core::ConfigValidationsPtr_t& configValidations,
-            core:: ValidationReportPtr_t& validationReport,
-            int max_iter, const ConfigurationShooterPtr_t& shooter,
-            HierarchicalIterative::Status constraintApplied,
-            const core::Configuration_t& config, bool valid,
-            const graph::StatePtr_t& state);
-
-      }; // class RMRStar
+            core::ValidationReportPtr_t& validationReport, bool valid,
+            const graph::StatePtr_t& currentState);
+}; // class RMRStar
     } // namespace pathPlanning
   } // namespace manipulation
 } // namespace hpp
