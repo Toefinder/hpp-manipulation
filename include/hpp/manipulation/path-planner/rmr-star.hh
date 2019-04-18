@@ -218,7 +218,7 @@ namespace hpp {
             const ConfigurationPtr_t& configuration);
 
 	 ///Shoot a random config in the intersection of two leaves
-         ConfigurationPtr_t createInterStateNode
+         ConfigurationPtr_t createInterStateConfig
            (const ContactState& currentLeaf, const ContactState& latestLeaf,
             const core::ConfigValidationsPtr_t& configValidations,
             core::ValidationReportPtr_t& validationReport, bool valid,

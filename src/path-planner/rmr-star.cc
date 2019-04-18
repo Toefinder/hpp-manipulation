@@ -462,7 +462,7 @@ namespace hpp {
           if (waypointIntersec) {
             while (succeed ==false) {
               valid=false;
-              q_waypointInter = createInterStateNode
+              q_waypointInter = createInterStateConfig
                 (currentLeaf, latestLeaf, configValidations, validationReport,
                  valid, currentState);
 
@@ -663,7 +663,7 @@ namespace hpp {
       {
         core::ConfigValidationsPtr_t configValidations
           (manipulationProblem_.configValidations ());
-        ConfigurationPtr_t q_inter = createInterStateNode
+        ConfigurationPtr_t q_inter = createInterStateConfig
           (currentLeaf, latestLeaf, configValidations, validationReport,
            valid, currentState);
         if (q_inter) {
@@ -691,7 +691,7 @@ namespace hpp {
 
       ///////////////////////////////////////////////////////////////////////
 
-      ConfigurationPtr_t RMRStar::createInterStateNode
+      ConfigurationPtr_t RMRStar::createInterStateConfig
       (const ContactState& currentLeaf, const ContactState& latestLeaf,
        const core::ConfigValidationsPtr_t& configValidations,
        core::ValidationReportPtr_t& validationReport, bool valid,
