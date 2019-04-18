@@ -67,8 +67,8 @@ namespace hpp {
 
 	/// Map linking functions and its right hand side
 	typedef std::multimap <constraints::ImplicitPtr_t,
-                               constraints::vector_t> RhsMap_t;
-	RhsMap_t RhsMap_;
+                               constraints::vector_t> RightHandSides_t;
+	RightHandSides_t rightHandSides_;
 
      protected:
         /// Protected constructor
@@ -208,9 +208,9 @@ namespace hpp {
 	  (const graph::WaypointEdgePtr_t& waypointEdge,
            const constraints::NumericalConstraints_t& constraints,
            const constraints::NumericalConstraints_t& transitConstraints,
-           const RhsMap_t& rhsMap, int max_iter, size_type k,
-           core:: ValidationReportPtr_t& validationReport, bool valid,
-           HierarchicalIterative::Status constraintApplied,
+           const ContactState::RightHandSides_t& rhsMap, int max_iter,
+           size_type k, core:: ValidationReportPtr_t& validationReport,
+           bool valid, HierarchicalIterative::Status constraintApplied,
            core::PathPtr_t& projpath, const PathProjectorPtr_t& pathProjector,
            const ConfigurationShooterPtr_t& shooter,
            const core::RoadmapPtr_t& roadmap,

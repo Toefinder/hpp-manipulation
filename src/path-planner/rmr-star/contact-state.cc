@@ -55,7 +55,7 @@ namespace hpp {
           state_ (), rightHandSide_ (), constraints_ (emptyConstraints ()),
           solver_ (&const_cast <BySubstitution&>
                    (constraints_->configProjector ()->solver ())), config_ (),
-          rhsMap_()
+          rightHandSides_()
         {
         }
 
@@ -65,7 +65,7 @@ namespace hpp {
           state_ (state), rightHandSide_ (), constraints_ (constraints),
           solver_ (&const_cast <BySubstitution&>
                    (constraints->configProjector ()->solver ())),
-          config_(config), rhsMap_()
+          config_(config), rightHandSides_()
         {
           rightHandSide_ =
             solver_->rightHandSideFromConfig (config);
@@ -76,7 +76,8 @@ namespace hpp {
             constraints::vectorOut_t rhs= function->nonConstRightHandSide();
             solver_->getRightHandSide(num[i],rhs);
 
-            rhsMap_.insert
+            assert (rightHandSides_.count (function) == 0);
+            rightHandSides_.insert
               (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
                (function,rhs));
           }
@@ -85,7 +86,7 @@ namespace hpp {
         ContactState::ContactState (const ContactState& other) :
           state_ (other.state_), rightHandSide_ (other.rightHandSide_),
           constraints_ (other.constraints_), solver_ (other.solver_),
-          config_ (other.config_), rhsMap_ (other.rhsMap_)
+          config_ (other.config_), rightHandSides_ (other.rightHandSides_)
         {
         }
 
@@ -97,7 +98,7 @@ namespace hpp {
           constraints_ = other.constraints_;
           solver_ = other.solver_;
           config_ = other.config_;
-          rhsMap_ = other.rhsMap_;
+          rightHandSides_ = other.rightHandSides_;
           return *this;
         }
 

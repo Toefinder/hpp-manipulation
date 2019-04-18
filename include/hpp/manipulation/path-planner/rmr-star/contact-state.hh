@@ -52,8 +52,8 @@ namespace hpp {
           typedef constraints::solver::BySubstitution BySubstitution;
 	public:
           /// Map linking constraints and their right hand side
-          typedef std::multimap <constraints::ImplicitPtr_t,
-                                 constraints::vector_t> RhsMap_t;
+          typedef std::map <constraints::ImplicitPtr_t,
+                            constraints::vector_t> RightHandSides_t;
 
 	  ///Empty constructor
 	  ContactState ();
@@ -103,12 +103,11 @@ namespace hpp {
 	    return config_;
 	  }
 
-	  ///Return rhsMap_
-	  const RhsMap_t& rhsMap () const
+	  ///Return rightHandSides_
+	  const RightHandSides_t& rightHandSides () const
 	  {
 	    assert (state_);
-
-	    return rhsMap_;
+	    return rightHandSides_;
 	  }
 
           ContactState& operator= (const ContactState& constactState);
@@ -119,7 +118,7 @@ namespace hpp {
           core::ConstraintSetPtr_t constraints_;
 	  BySubstitution* solver_;
 	  Configuration_t config_;
-	  RhsMap_t rhsMap_;
+	  RightHandSides_t rightHandSides_;
 	};
 
 	/// Compare to ContactState and return true if a is smaller than b
