@@ -187,7 +187,7 @@ namespace hpp {
 
 #ifndef NDEBUG
                   bool set=
-#endif 
+#endif
                   solver.rightHandSideFromConfig (numConstraints[i],*q_rhs);
                   assert (set);
                   continue;
@@ -466,8 +466,7 @@ namespace hpp {
                 (currentLeaf, latestLeaf, configValidations, validationReport,
                  valid, currentState);
 
-              if (*q_waypointInter !=
-                  *(roadmap_->initNode ()->configuration())) {
+              if (q_waypointInter) {
                 //Copy of  waypointInter
                 ConfigurationPtr_t q_waypoint (new Configuration_t
                                                (*q_waypointInter));
@@ -666,32 +665,28 @@ namespace hpp {
           (manipulationProblem_.configValidations ());
         ConfigurationPtr_t q_inter = createInterStateNode
           (currentLeaf, latestLeaf, configValidations, validationReport,
-           config, valid, currentState);
-        graph::EdgePtr_t edgeTransit =transition_[latestLeaf_.state()];
-        Nodes_t nearNodes = latestRoadmap_->nearestNodes(q_inter,k);
-        core::ConstraintSetPtr_t constraintTRansit =
-          edgeTransit->configConstraint();
+           valid, currentState);
+        if (q_inter) {
+          graph::EdgePtr_t edgeTransit =transition_[latestLeaf_.state()];
+          Nodes_t nearNodes = latestRoadmap_->nearestNodes(q_inter,k);
+          core::ConstraintSetPtr_t constraintTRansit =
+            edgeTransit->configConstraint();
 
-        for (Nodes_t :: const_iterator itnode = nearNodes.
-               begin(); itnode !=nearNodes.end(); itnode++ )
-          {
-            ConfigurationPtr_t nodeConfig =
-              (*itnode)->configuration();
-
+          for (Nodes_t :: const_iterator itnode = nearNodes.
+                 begin(); itnode !=nearNodes.end(); itnode++ ) {
+            ConfigurationPtr_t nodeConfig = (*itnode)->configuration();
             connectConfigToNode (edgeTransit,path,projpath,q_inter,nodeConfig);
           }
-        graph::EdgePtr_t edge =transition_[currentState];
-        Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
-        core::ConstraintSetPtr_t constraint =  edge->configConstraint();
+          graph::EdgePtr_t edge =transition_[currentState];
+          Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
+          core::ConstraintSetPtr_t constraint =  edge->configConstraint();
 
-        for (Nodes_t :: const_iterator it = nearestNodes.
-               begin(); it !=nearestNodes.end(); it++ )
-          {
-            ConfigurationPtr_t nodeConfig =
-              (*it)->configuration();
-
+          for (Nodes_t :: const_iterator it = nearestNodes.
+                 begin(); it !=nearestNodes.end(); it++ ) {
+            ConfigurationPtr_t nodeConfig = (*it)->configuration();
             connectConfigToNode (edge,path,projpath,q_inter,nodeConfig);
           }
+        }
       }
 
       ///////////////////////////////////////////////////////////////////////
@@ -759,7 +754,7 @@ namespace hpp {
         if (!valid) {
           assert (i == max_iter);
           hppDout (info,"i reached max_iter, not any connect node have been found");
-          q_inter=roadmap()->initNode ()->configuration();
+          q_inter = ConfigurationPtr_t ();
           //	assert (i!=max_iter);
         }
 
