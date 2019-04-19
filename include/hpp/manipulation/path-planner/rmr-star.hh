@@ -169,8 +169,7 @@ namespace hpp {
 
 	///Compare the threshold of two solvers and return the biggest
 	pinocchio::value_type biggestThreshold
-	  ( constraints::solver::BySubstitution solver1,
-	    constraints::solver::BySubstitution solver2);
+	  (const BySubstitution& solver1, const BySubstitution& solver2);
 
 
 	/// Connect two roadmaps (latestRoadmap_ and an other one)
@@ -183,9 +182,7 @@ namespace hpp {
 	void connectDirectStates
           (const ContactState& currentLeaf, const ContactState& latestLeaf,
            core::ValidationReportPtr_t& validationReport,
-           size_type k,
-           core::PathPtr_t& path, core::PathPtr_t& projpath, bool valid,
-           const graph::StatePtr_t& currentState,
+           size_type k, bool valid, const graph::StatePtr_t& currentState,
            const core::RoadmapPtr_t& roadmap);
 
 	/// Connect two roadmaps (latestRoadmap_ and an other one)
@@ -204,7 +201,6 @@ namespace hpp {
            const ContactState& currentLeaf, const ContactState& latestLeaf,
            size_type k,
            core::ValidationReportPtr_t& validationReport, bool valid,
-           core::PathPtr_t& projpath,
            const core::RoadmapPtr_t& roadmap,
            const graph::StatePtr_t& currentState);
 
@@ -213,8 +209,7 @@ namespace hpp {
       /// \param q1 the configuration of the first node
       /// \param configuration the configuration of the second node
 	 void connectConfigToNode
-           (const graph::EdgePtr_t& edge, core::PathPtr_t&  path,
-            core::PathPtr_t& projpath, const ConfigurationPtr_t& q1,
+           (const graph::EdgePtr_t& edge, const ConfigurationPtr_t& q1,
             const ConfigurationPtr_t& configuration);
 
 	 ///Shoot a random config in the intersection of two leaves
