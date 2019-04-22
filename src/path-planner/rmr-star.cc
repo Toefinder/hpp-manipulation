@@ -130,6 +130,8 @@ namespace hpp {
 
       ContactState RMRStar::sampleContact ()
       {
+        size_type maxNbTry (problem ().getParameter
+                            ("RMR*/nbTryRandomConfig").intValue ());
         bool valid =false;
         ConfigurationShooterPtr_t shooter
           (manipulationProblem_.configurationShooter ());
@@ -167,12 +169,11 @@ namespace hpp {
 
           //Try to detect the function already visited and get their
           //Right Hand side to set it to the new state
-
           for (std::size_t i=0; i<numConstraints.size() ;i++)
             {
               if (counter_==setRhsFreq_ && i==randomSkip)
                 {
-                  while (validRhs==false && j<=100)
+                  while (validRhs==false && j<=maxNbTry)
                     {
                       //Shoot random configuration
                       q_rhs= shooter->shoot();
@@ -219,7 +220,7 @@ namespace hpp {
             }
           hppDout(info,"solver"<<solver);
 
-          while (valid==false && i<=100)
+          while (valid==false && i<=maxNbTry)
             {
               //Shoot random configuration
               q_rand_= shooter->shoot();
@@ -233,10 +234,10 @@ namespace hpp {
               }
               valid = configValidations->validate (*q_rand_, validationReport);
               i++;
-              hppDout(info,"q_rand sampleContact"<<displayConfig(*q_rand_));
+              hppDout(info,"q_rand sampleContact: "<<displayConfig(*q_rand_));
             }
 
-          if (i==101){
+          if (!valid) {
             hppDout (info,"fail to find a random configuration in state "
                      << s_rand->name ());
             stateValid=false;
@@ -1035,6 +1036,12 @@ namespace hpp {
       core::Problem::declareParameter(ParameterDescription (Parameter::INT,
                                                             "RMR*/SetRhsFreq",
                                                             "The desired number of the frequency of set configuration map build.If it's 0 it's never mannually set, if it's 100 it's 99% of time mannually set", Parameter((size_type)100)));
+      core::Problem::declareParameter (ParameterDescription
+                                       (Parameter::INT,
+                                        "RMR*/nbTryRandomConfig",
+                                        "The number of attempt to sample a "
+                                        "valid random configuration in a given "
+                                        "state.", Parameter ((size_type)100)));
       HPP_END_PARAMETER_DECLARATION(RMRStar)
     } // namespace pathPlanner
   } // namespace manipulation
