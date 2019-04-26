@@ -139,7 +139,7 @@ namespace hpp {
         // Shoot random number
         std::size_t i_rand=rand() % nbStates;
 
-        // Grap random state of the graph
+        // Sample random state of the graph
         const graph::StatePtr_t s_rand =
           RMRStar::extract_keys(transition_)[i_rand];
 
@@ -147,7 +147,7 @@ namespace hpp {
         bool validRhs=false;
         ConfigurationPtr_t q_rhs;
 
-        while (!stateValid){
+        while (!stateValid) {
           core:: ValidationReportPtr_t validationReport;
           core::ConfigValidationsPtr_t configValidations
             (problem ().configValidations ());
@@ -159,94 +159,113 @@ namespace hpp {
             HierarchicalIterative::INFEASIBLE;
 
           ConstraintSetPtr_t stateConfig =
-            graph_->configConstraint(transition_[s_rand]);
+            graph_->configConstraint (transition_[s_rand]);
           NumericalConstraints_t numConstraints =
-            stateConfig->configProjector () -> numericalConstraints();
+            stateConfig->configProjector ()->numericalConstraints();
 
           constraints::solver::BySubstitution solver
             (stateConfig->configProjector ()->solver ());
+          // Sample a random constraint among the numerical constraints of
+          // the random state selected.
           std::size_t randomSkip = rand() % numConstraints.size();
 
-          //Try to detect the function already visited and get their
-          //Right Hand side to set it to the new state
-          for (std::size_t i=0; i<numConstraints.size() ;i++)
-            {
-              if (counter_==setRhsFreq_ && i==randomSkip)
-                {
-                  while (validRhs==false && j<=maxNbTry)
-                    {
-                      //Shoot random configuration
-                      q_rhs= shooter->shoot();
-                      bool constApply =s_rand->configConstraint()->apply(*q_rhs);
+          // Loop over the constraints of the solver,
+          // once every setRhsFreq_ times, generate a valid configuration
+          // in the randomly selected state and set right hand side of
+          // the randomly selected constraint from this configuration in
+          // the solver.
+          //
+          // If the randomly selected constraint has already been used
+          // (i.e. if it is stored in member rightHandSides_), randomly
+          // select an already used right hand side.
+          //
+          // Note that first loop is useless if the randomly selected constraint
+          // has already been used.
+          for (std::size_t i = 0; i < numConstraints.size() ;i++) {
+            if (counter_ == setRhsFreq_ && i == randomSkip) {
+              while (!validRhs && j <= maxNbTry) {
+                // shoot random configuration
+                q_rhs= shooter->shoot();
+                // project it on state
+                bool constApply =s_rand->configConstraint()->apply(*q_rhs);
 
-                      if (!constApply) {
-                        validRhs=false;
-                        j++;
-                        continue;
-                      }
-                      validRhs =
-                        configValidations->validate (*q_rhs, validationReport);
-                      j++;
-                      hppDout(info,"q_rand rhs random"<<displayConfig(*q_rhs));
-                    }
-
-#ifndef NDEBUG
-                  bool set=
-#endif
-                  solver.rightHandSideFromConfig (numConstraints[i],*q_rhs);
-                  assert (set);
+                if (!constApply) {
+                  validRhs=false;
+                  j++;
                   continue;
                 }
+                // until it is valid
+                validRhs =
+                  configValidations->validate (*q_rhs, validationReport);
+                j++;
+                hppDout(info,"q_rand rhs random"<<displayConfig(*q_rhs));
+              } // while (!validRhs && j <= maxNbTry)
 
-              for (RightHandSides_t::const_iterator it=rightHandSides_.begin() ;
-                   it!= rightHandSides_.end() ; ++it)
-                {
-                  if (it->first->functionPtr()->name()==
-                      numConstraints[i]->functionPtr()->name()){
+              // set right hand side of randomly selected constraint with
+              // this configuration
+#ifndef NDEBUG
+              bool set=
+#endif
+                solver.rightHandSideFromConfig (numConstraints[i],*q_rhs);
+              assert (set);
+              continue;
+            } // if (counter_ == setRhsFreq_ && i == randomSkip)
 
-                    rhsOfTheFunctionAlreadyVisited.push_back(it->second);
-                  }
-                }
-
-              if (!rhsOfTheFunctionAlreadyVisited.empty()){
-
-                std::size_t indice_rand=rand()%rhsOfTheFunctionAlreadyVisited.size();
-                constraints::vector_t Rhs_rand=rhsOfTheFunctionAlreadyVisited[indice_rand];
-                bool success=solver.rightHandSide(numConstraints[i],Rhs_rand);
-                assert(success);
-                rhsOfTheFunctionAlreadyVisited.clear();
+            // retrieve right hand sides already used for randomly selected
+            // constraint.
+            for (RightHandSides_t::const_iterator it=rightHandSides_.begin();
+                 it!= rightHandSides_.end () ; ++it) {
+              if (it->first->functionPtr ()->name() ==
+                  numConstraints[i]->functionPtr()->name ()) {
+                rhsOfTheFunctionAlreadyVisited.push_back (it->second);
               }
-
             }
-          hppDout(info,"solver"<<solver);
 
-          while (valid==false && i<=maxNbTry)
-            {
-              //Shoot random configuration
-              q_rand_= shooter->shoot();
-              constraintApplied =solver.solve(*q_rand_);
-              hppDout(info, "constraintApply"<<constraintApplied);
+            if (!rhsOfTheFunctionAlreadyVisited.empty()) {
+              // Randomly sample an already used right hand side for the
+              // randomly selected constraint
+              std::size_t indice_rand = rand() %
+                rhsOfTheFunctionAlreadyVisited.size();
+              constraints::vector_t Rhs_rand
+                (rhsOfTheFunctionAlreadyVisited [indice_rand]);
+              assert (!Rhs_rand.hasNaN ());
+              // set right hand side of the randomly selected constraint
+              // to this value in the current solver.
+              bool success=solver.rightHandSide (numConstraints[i], Rhs_rand);
+              assert(success);
+              rhsOfTheFunctionAlreadyVisited.clear();
+            }
+          } // for (std::size_t i = 0; i < numConstraints.size() ;i++)
+          hppDout(info,"solver" << solver);
 
-              if (constraintApplied != HierarchicalIterative::SUCCESS) {
-                valid=false;
-                i++;
-                continue;
-              }
-              valid = configValidations->validate (*q_rand_, validationReport);
+          // Try to generate a valid configuration in the leaf selected
+          // by the above loop.
+          while (!valid && i <= maxNbTry) {
+            //Shoot random configuration
+            q_rand_= shooter->shoot();
+            constraintApplied =solver.solve (*q_rand_);
+            assert (!q_rand_->hasNaN ());
+            hppDout(info, "constraintApply: "<<constraintApplied);
+
+            if (constraintApplied != HierarchicalIterative::SUCCESS) {
+              valid=false;
               i++;
-              hppDout(info,"q_rand sampleContact: "<<displayConfig(*q_rand_));
+              continue;
             }
+            valid = configValidations->validate (*q_rand_, validationReport);
+            i++;
+            hppDout(info,"q_rand sampleContact: "<<displayConfig(*q_rand_));
+          }
 
           if (!valid) {
             hppDout (info,"fail to find a random configuration in state "
                      << s_rand->name ());
             stateValid=false;
             i=0;
+          } else {
+            stateValid=true;
           }
-
-          else {stateValid=true;}
-
-        }
+        } // while (!stateValid)
         //Get loop_edge constraints
         graph::EdgePtr_t loop_edge = transition_[s_rand];
         core::ConstraintSetPtr_t edgeConstraints =loop_edge->pathConstraint();
@@ -833,7 +852,7 @@ namespace hpp {
             constraints::vectorOut_t rhs= function->nonConstRightHandSide();
             bool success = false;
             success=solver.getRightHandSide(function,rhs);
-
+            assert (!rhs.hasNaN ());
             assert (success);
 
             bool null=rhsNull(rhs);
