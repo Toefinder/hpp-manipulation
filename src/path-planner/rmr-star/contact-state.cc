@@ -38,6 +38,8 @@
 #include <hpp/core/constraint-set.hh>
 #include <hpp/core/config-projector.hh>
 
+#include <hpp/manipulation/graph/state.hh>
+
 namespace hpp {
   namespace manipulation {
     namespace pathPlanner {
@@ -67,6 +69,7 @@ namespace hpp {
                    (constraints->configProjector ()->solver ())),
           config_(config), rightHandSides_()
         {
+          assert (state->contains (config));
           rightHandSide_ =
             solver_->rightHandSideFromConfig (config);
           core::NumericalConstraints_t num = solver_->numericalConstraints();

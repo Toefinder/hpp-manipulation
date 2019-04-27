@@ -86,9 +86,6 @@ namespace hpp {
 	/// Latest roadmap built in a leaf
 	core::RoadmapPtr_t latestRoadmap_;
 
-	///Random config used as q_init
-	mutable ConfigurationPtr_t q_rand_;
-
 	/// latest contact state
 	ContactState latestLeaf_;
 

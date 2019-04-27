@@ -51,12 +51,14 @@ namespace hpp {
     namespace pathPlanner {
 
       typedef rmrStar::ContactState ContactState;
+      typedef core::ConfigValidationsPtr_t ConfigValidationsPtr_t;
       typedef core::PathPtr_t PathPtr_t;
       typedef core::PathVector PathVector;
       typedef core::PathVectorPtr_t PathVectorPtr_t;
       typedef core::Nodes_t Nodes_t;
       typedef core::NodePtr_t NodePtr_t;
       typedef core::Edges_t Edges_t;
+      typedef core::ValidationReportPtr_t ValidationReportPtr_t;
       typedef constraints::solver::HierarchicalIterative HierarchicalIterative;
       typedef constraints::solver::BySubstitution BySubstitution;
       typedef constraints::NumericalConstraints_t NumericalConstraints_t;
@@ -128,11 +130,52 @@ namespace hpp {
 
       ////////////////////////////////////////////////////////////////////////////
 
+      bool sampleInState (const graph::StatePtr_t& state,
+                          const ConfigurationShooterPtr_t& shooter,
+                          const ConfigValidationsPtr_t& configValidations,
+                          size_type maxNbTry, ConfigurationPtr_t& q)
+      {
+        bool valid (false); size_type j=0;
+        while (!valid && j <= maxNbTry) {
+          // shoot random configuration
+          q = shooter->shoot();
+          // project it on state
+          bool success = state->configConstraint()->apply(*q);
+          if (success) {
+            // until it is valid
+            ValidationReportPtr_t validationReport;
+            valid = configValidations->validate (*q, validationReport);
+            ++j;
+          }
+        } // while (!valid && j <= maxNbTry)
+        return valid;
+      }
+
+      bool sampleValidConfiguration
+      (const BySubstitution& solver, const ConfigurationShooterPtr_t& shooter,
+       const ConfigValidationsPtr_t& configValidations, size_type maxNbTry,
+       ConfigurationPtr_t& q)
+      {
+        bool valid (false); size_type j (0);
+        while (!valid && j <= maxNbTry) {
+          // shoot random configuration
+          q = shooter->shoot();
+          // project it on state
+          HierarchicalIterative::Status status = solver.solve (*q);
+          if (status == HierarchicalIterative::SUCCESS) {
+            // until it is valid
+            ValidationReportPtr_t validationReport;
+            valid = configValidations->validate (*q, validationReport);
+            ++j;
+          }
+        } // while (!valid && j <= maxNbTry)
+        return valid;
+      }
+
       ContactState RMRStar::sampleContact ()
       {
         size_type maxNbTry (problem ().getParameter
                             ("RMR*/nbTryRandomConfig").intValue ());
-        bool valid =false;
         ConfigurationShooterPtr_t shooter
           (manipulationProblem_.configurationShooter ());
         std::size_t nbStates (transition_.size ());
@@ -144,138 +187,86 @@ namespace hpp {
           RMRStar::extract_keys(transition_)[i_rand];
 
         bool stateValid = false;
-        bool validRhs=false;
-        ConfigurationPtr_t q_rhs;
+        ConfigurationPtr_t q;
 
         while (!stateValid) {
-          core:: ValidationReportPtr_t validationReport;
-          core::ConfigValidationsPtr_t configValidations
+          ValidationReportPtr_t validationReport;
+          ConfigValidationsPtr_t configValidations
             (problem ().configValidations ());
-          int i=0;
-          int j=0;
-          std::vector <constraints::vector_t> rhsOfTheFunctionAlreadyVisited;
-
-          HierarchicalIterative::Status constraintApplied=
-            HierarchicalIterative::INFEASIBLE;
 
           ConstraintSetPtr_t stateConfig =
             graph_->configConstraint (transition_[s_rand]);
           NumericalConstraints_t numConstraints =
             stateConfig->configProjector ()->numericalConstraints();
 
-          constraints::solver::BySubstitution solver
+          BySubstitution solver
             (stateConfig->configProjector ()->solver ());
-          // Sample a random constraint among the numerical constraints of
-          // the random state selected.
-          std::size_t randomSkip = rand() % numConstraints.size();
 
-          // Loop over the constraints of the solver,
-          // once every setRhsFreq_ times, generate a valid configuration
-          // in the randomly selected state and set right hand side of
-          // the randomly selected constraint from this configuration in
-          // the solver.
-          //
-          // If the randomly selected constraint has already been used
-          // (i.e. if it is stored in member rightHandSides_), randomly
-          // select an already used right hand side.
-          //
-          // Note that first loop is useless if the randomly selected constraint
-          // has already been used.
-          for (std::size_t i = 0; i < numConstraints.size() ;i++) {
-            if (counter_ == setRhsFreq_ && i == randomSkip) {
-              while (!validRhs && j <= maxNbTry) {
-                // shoot random configuration
-                q_rhs= shooter->shoot();
-                // project it on state
-                bool constApply =s_rand->configConstraint()->apply(*q_rhs);
-
-                if (!constApply) {
-                  validRhs=false;
-                  j++;
-                  continue;
-                }
-                // until it is valid
-                validRhs =
-                  configValidations->validate (*q_rhs, validationReport);
-                j++;
-                hppDout(info,"q_rand rhs random"<<displayConfig(*q_rhs));
-              } // while (!validRhs && j <= maxNbTry)
-
-              // set right hand side of randomly selected constraint with
-              // this configuration
-#ifndef NDEBUG
-              bool set=
-#endif
-                solver.rightHandSideFromConfig (numConstraints[i],*q_rhs);
-              assert (set);
-              continue;
-            } // if (counter_ == setRhsFreq_ && i == randomSkip)
-
+          // Check whether right hand side of each constraint has already
+          // been instantiated. If not, a random configuration needs to be
+          // sampled in this state.
+          bool needToSample (false);
+          std::vector < std::vector <constraints::vector_t> >
+            rhsOfConstraint (numConstraints.size ());
+          for (std::size_t i = 0; i < numConstraints.size (); ++i) {
             // retrieve right hand sides already used for randomly selected
             // constraint.
-            for (RightHandSides_t::const_iterator it=rightHandSides_.begin();
+            for (RightHandSides_t::const_iterator it=rightHandSides_.begin ();
                  it!= rightHandSides_.end () ; ++it) {
-              if (it->first->functionPtr ()->name() ==
-                  numConstraints[i]->functionPtr()->name ()) {
-                rhsOfTheFunctionAlreadyVisited.push_back (it->second);
+              if (it->first->functionPtr ()->name () ==
+                  numConstraints [i]->functionPtr ()->name ()) {
+                rhsOfConstraint [i].push_back (it->second);
               }
             }
-
-            if (!rhsOfTheFunctionAlreadyVisited.empty()) {
-              // Randomly sample an already used right hand side for the
-              // randomly selected constraint
-              std::size_t indice_rand = rand() %
-                rhsOfTheFunctionAlreadyVisited.size();
-              constraints::vector_t Rhs_rand
-                (rhsOfTheFunctionAlreadyVisited [indice_rand]);
-              assert (!Rhs_rand.hasNaN ());
-              // set right hand side of the randomly selected constraint
-              // to this value in the current solver.
-              bool success=solver.rightHandSide (numConstraints[i], Rhs_rand);
-              assert(success);
-              rhsOfTheFunctionAlreadyVisited.clear();
+            if (rhsOfConstraint [i].empty ()) {
+              needToSample = true;
             }
-          } // for (std::size_t i = 0; i < numConstraints.size() ;i++)
-          hppDout(info,"solver" << solver);
+          }
 
-          // Try to generate a valid configuration in the leaf selected
-          // by the above loop.
-          while (!valid && i <= maxNbTry) {
-            //Shoot random configuration
-            q_rand_= shooter->shoot();
-            constraintApplied =solver.solve (*q_rand_);
-            assert (!q_rand_->hasNaN ());
-            hppDout(info, "constraintApply: "<<constraintApplied);
-
-            if (constraintApplied != HierarchicalIterative::SUCCESS) {
-              valid=false;
-              i++;
+          // If at least one of the constraints has never been instantiated,
+          // sample a valid configuration in state
+          if (needToSample) {
+            if (!sampleInState (s_rand, shooter, configValidations, maxNbTry,
+                                q)) {
               continue;
             }
-            valid = configValidations->validate (*q_rand_, validationReport);
-            i++;
-            hppDout(info,"q_rand sampleContact: "<<displayConfig(*q_rand_));
           }
 
-          if (!valid) {
-            hppDout (info,"fail to find a random configuration in state "
-                     << s_rand->name ());
-            stateValid=false;
-            i=0;
-          } else {
-            stateValid=true;
+          // Instantiate right hand side of each constraint
+          for (std::size_t i = 0; i < numConstraints.size (); ++i) {
+            if (rhsOfConstraint [i].empty ()) {
+              // Initialize right hand side with random configuration
+#ifndef NDEBUG
+              bool success =
+#endif
+                solver.rightHandSideFromConfig (numConstraints [i], *q);
+              assert (success);
+            } else {
+              // Sample right hand side among already instantiated
+              std::size_t indice_rand = rand() % rhsOfConstraint [i].size();
+#ifndef NDEBUG
+              bool success =
+#endif
+                solver.rightHandSide (numConstraints [i],
+                                      rhsOfConstraint [i] [indice_rand]);
+              assert (success);
+            }
           }
+          // At this point, the right hand side of the solver is set.
+          // We now sample a valid configuration with solver
+          stateValid = sampleValidConfiguration
+            (solver, shooter, configValidations, maxNbTry, q);
         } // while (!stateValid)
-        //Get loop_edge constraints
-        graph::EdgePtr_t loop_edge = transition_[s_rand];
-        core::ConstraintSetPtr_t edgeConstraints =loop_edge->pathConstraint();
 
-        // recovery of the edge steering method
+        //Get loop_edge constraints
+        graph::EdgePtr_t loop_edge = transition_ [s_rand];
+        core::ConstraintSetPtr_t edgeConstraints = loop_edge->pathConstraint();
+
+        // retrieved the edge steering method
         edgeSteeringMethod_ = loop_edge -> steeringMethod();
 
         // get right hand side of constraint from q_rand
-        ContactState contactState (s_rand, *q_rand_, edgeConstraints);
-
+        ContactState contactState (s_rand, *q, edgeConstraints);
         return contactState;
       }
 
@@ -289,7 +280,8 @@ namespace hpp {
 
         //copy the problem and pass the edge contraints
         core::Problem p (problem ());
-        p.initConfig(q_rand_);
+        p.initConfig (ConfigurationPtr_t
+                      (new Configuration_t (latestLeaf_.config ())));
         p.steeringMethod (edgeSteeringMethod_);
         p.constraints(latestLeaf_.constraints ());
         p.resetGoalConfigs();
@@ -342,7 +334,7 @@ namespace hpp {
 
       void RMRStar::connectRoadmap ()
       {
-        core:: ValidationReportPtr_t validationReport;
+        ValidationReportPtr_t validationReport;
         size_type k=problem().getParameter("RMR*/numberOfConnectNodes").intValue();
 
         // Iterate through all pre-existing leaf roadmaps and try to connect
@@ -376,11 +368,11 @@ namespace hpp {
           bool valid=false;
 
           // Get solver projecting on latest leaf explored
-          constraints::solver::BySubstitution latestLeafSolver
+          BySubstitution latestLeafSolver
             (latestLeaf_.solver ());
 
           // Get solver projecting on current leaf
-          constraints::solver::BySubstitution currentLeafSolver
+          BySubstitution currentLeafSolver
             (currentLeaf.solver ());
 
           bool rhsEqual=true;
@@ -442,7 +434,7 @@ namespace hpp {
       (const graph::WaypointEdgePtr_t& waypointEdge,
        const ContactState& currentLeaf, const ContactState& latestLeaf,
        size_type k,
-       core::ValidationReportPtr_t& validationReport, bool valid,
+       ValidationReportPtr_t& validationReport, bool valid,
        const core::RoadmapPtr_t& roadmap,
        const graph::StatePtr_t& currentState)
       {
@@ -454,12 +446,13 @@ namespace hpp {
         ContactState::RightHandSides_t currentLeafRhs
           (currentLeaf.rightHandSides ());
         // Configuration on current leaf
-        core::ConfigValidationsPtr_t configValidations
+        ConfigValidationsPtr_t configValidations
           (manipulationProblem_.configValidations ());
 
         //get waypoints constraints
         std::size_t nWaypoints = waypointEdge->nbWaypoints();
         // log waypoint edge
+        hppDout(info,"nWaypoints = "<<nWaypoints);
         for (std::size_t j = 0; j < nWaypoints; ++j) {
           hppDout (info, "waypoint " << j);
           hppDout (info, "  from: "
@@ -469,7 +462,6 @@ namespace hpp {
         }
         ConfigurationPtr_t q_waypointInter;
         PathPtr_t path, projPath, validPath;
-        hppDout(info,"nWaypoints = "<<nWaypoints);
         bool success=false;
         Configuration_t q_prev, q_next;
 
@@ -477,7 +469,6 @@ namespace hpp {
         q_waypointInter = createInterStateConfig
           (currentLeaf, latestLeaf, configValidations, validationReport,
            valid, currentState);
-        // Detect on which waypoint this configuration lies
         if (!q_waypointInter) {
           hppDout (info, "Failed to generate configuration at intersection of "
                    " contact states " << currentState->name () <<
@@ -486,8 +477,13 @@ namespace hpp {
         }
         size_type wp;
         // Detect on which waypoint state q_waypointInter lies
-        for (wp = 0; wp < (size_type) nWaypoints; ++wp) {
-          graph::StatePtr_t targetState (waypointEdge->waypoint(wp)->to ());
+        for (wp = -1; wp < (size_type) nWaypoints; ++wp) {
+          graph::StatePtr_t targetState;
+          if (wp == -1) {
+            targetState = waypointEdge->waypoint(0)->from ();
+          } else {
+            targetState = waypointEdge->waypoint(wp)->to ();
+          }
 
           if (targetState->configConstraint ()->configProjector ()->solver ().
               isSatisfied (*q_waypointInter)) {
@@ -496,9 +492,6 @@ namespace hpp {
             success = true;
             break;
           }
-          hppDout (info, "error threshold: "
-                   << targetState->configConstraint ()->configProjector ()->
-                   solver ().errorThreshold ());
         }
         // Configuration should be in a waypoint state
         assert (success);
@@ -672,10 +665,10 @@ namespace hpp {
 
       void RMRStar::connectDirectStates
       (const ContactState& currentLeaf, const ContactState& latestLeaf,
-       core::ValidationReportPtr_t& validationReport, size_type k, bool valid,
+       ValidationReportPtr_t& validationReport, size_type k, bool valid,
        const graph::StatePtr_t& currentState, const core::RoadmapPtr_t& roadmap)
       {
-        core::ConfigValidationsPtr_t configValidations
+        ConfigValidationsPtr_t configValidations
           (manipulationProblem_.configValidations ());
         ConfigurationPtr_t q_inter = createInterStateConfig
           (currentLeaf, latestLeaf, configValidations, validationReport,
@@ -696,7 +689,7 @@ namespace hpp {
           core::ConstraintSetPtr_t constraint =  edge->configConstraint();
 
           for (Nodes_t :: const_iterator it = nearestNodes.
-                 begin(); it !=nearestNodes.end(); it++ ) {
+                 begin(); it != nearestNodes.end(); it++ ) {
             ConfigurationPtr_t nodeConfig = (*it)->configuration();
             connectConfigToNode (edge,q_inter,nodeConfig);
           }
@@ -707,8 +700,8 @@ namespace hpp {
 
       ConfigurationPtr_t RMRStar::createInterStateConfig
       (const ContactState& currentLeaf, const ContactState& latestLeaf,
-       const core::ConfigValidationsPtr_t& configValidations,
-       core::ValidationReportPtr_t& validationReport, bool valid,
+       const ConfigValidationsPtr_t& configValidations,
+       ValidationReportPtr_t& validationReport, bool valid,
        const graph::StatePtr_t& currentState)
       {
         const NumericalConstraints_t& currentLeafNumericalConstraints
@@ -725,7 +718,7 @@ namespace hpp {
         hppDout(info,"currentState "<<currentState->name());
         hppDout(info,"latestLeaf_ "<<latestLeaf_.state()->name());
 
-        constraints::solver::BySubstitution solver (latestLeaf_.solver ());
+        BySubstitution solver (latestLeaf_.solver ());
 
         assert (latestLeaf_.constraints ());
 
@@ -842,7 +835,7 @@ namespace hpp {
 
       void RMRStar::storeRhs ()
       {
-        const constraints::solver::BySubstitution& solver
+        const BySubstitution& solver
           (latestLeaf_.solver ());
         core::NumericalConstraints_t constraints =solver. numericalConstraints();
 
@@ -898,7 +891,8 @@ namespace hpp {
 
         //copy the problem and pass the edge contraints
         core::Problem p (problem ());
-        p.initConfig(q_rand_);
+        p.initConfig (ConfigurationPtr_t (new Configuration_t
+                                          (latestLeaf_.config ())));
         p.steeringMethod (edgeSteeringMethod_->copy ());
         p.constraints
           (core::ConstraintSet::createCopy(latestLeaf_.constraints ()));
@@ -957,15 +951,15 @@ namespace hpp {
         latestRoadmap_ = core::Roadmap::create
           (manipulationProblem_.distance(),manipulationProblem_.robot());
         latestRoadmap_->clear();
-        q_rand_=roadmap()->initNode ()->configuration();
+        ConfigurationPtr_t q (roadmap()->initNode ()->configuration());
 
         //Set init ContactState
         graph::StatePtr_t stateInit=
-          graph_->getState(*(q_rand_));
+          graph_->getState(*(q));
         graph::EdgePtr_t loop_edge = transition_[stateInit];
         core::ConstraintSetPtr_t edgeConstraints =loop_edge->pathConstraint();
         ContactState contactStateInit
-          (stateInit, *q_rand_, edgeConstraints);
+          (stateInit, *q, edgeConstraints);
         edgeSteeringMethod_ = loop_edge -> steeringMethod();
         latestLeaf_ = contactStateInit;
 
@@ -981,14 +975,14 @@ namespace hpp {
           latestRoadmap_ -> clear();
 
           //Set final ContactState
-          q_rand_=(*itn)->configuration();
+          q=(*itn)->configuration();
 
-          graph::StatePtr_t stateGoal=graph_->getState(*q_rand_);
+          graph::StatePtr_t stateGoal=graph_->getState(*q);
           loop_edge = transition_[stateGoal];
           edgeConstraints =loop_edge->pathConstraint();
 
           ContactState contactStateGoal
-            (stateGoal,*q_rand_, edgeConstraints);
+            (stateGoal,*q, edgeConstraints);
 
           latestLeaf_=contactStateGoal;
 
