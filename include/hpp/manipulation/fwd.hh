@@ -85,8 +85,6 @@ namespace hpp {
     typedef core::vectorOut_t vectorOut_t;
     HPP_PREDEF_CLASS (ManipulationPlanner);
     typedef boost::shared_ptr < ManipulationPlanner > ManipulationPlannerPtr_t;
-    HPP_PREDEF_CLASS (SymbolicPlanner);
-    typedef boost::shared_ptr < SymbolicPlanner > SymbolicPlannerPtr_t;
     namespace pathPlanner {
       HPP_PREDEF_CLASS (RMRStar);
       typedef boost::shared_ptr < RMRStar > RMRStarPtr_t;

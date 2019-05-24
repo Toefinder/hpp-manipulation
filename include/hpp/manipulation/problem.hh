@@ -47,24 +47,22 @@ namespace hpp {
         }
 
         /// Check whether the problem is well formulated.
-        virtual void checkProblem () const
-        {
-          core::Problem::checkProblem ();
-          if (!graph_)
-            throw std::runtime_error ("No graph in the problem.");
-          if (!pathValidation ())
-            throw std::runtime_error ("No GraphPathValidation in the problem.");
-          if (!steeringMethod ())
-            throw std::runtime_error ("No SteeringMethod in the problem.");
-        }
+        virtual void checkProblem () const;
 
-        /// Get the path validation as a GraphPathValidation
-        GraphPathValidationPtr_t pathValidation () const;
+        /// Expose parent method.
+        PathValidationPtr_t pathValidation () const;
 
+        /// \param pathValidation if of type GraphPathValidation, sets 
+        ///        its constraint graph to Problem::constraintGraph()
         void pathValidation (const PathValidationPtr_t& pathValidation);
 
         /// Get the steering method as a SteeringMethod
         SteeringMethodPtr_t steeringMethod () const;
+
+        void steeringMethod (core::SteeringMethodPtr_t sm)
+        {
+          Parent::steeringMethod (sm);
+        }
 
         /// Build a new path validation
         /// \note Current obstacles are added to the created object.

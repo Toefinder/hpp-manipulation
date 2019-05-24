@@ -32,6 +32,10 @@
 #include <hpp/core/path-projector/dichotomy.hh>
 #include <hpp/core/path-projector/global.hh>
 #include <hpp/core/path-projector/recursive-hermite.hh>
+#include <hpp/core/path-validation/discretized-collision-checking.hh>
+#include <hpp/core/path-validation/discretized-joint-bound.hh>
+#include <hpp/core/continuous-validation/dichotomy.hh>
+#include <hpp/core/continuous-validation/progressive.hh>
 #include <hpp/core/roadmap.hh>
 #include <hpp/core/steering-method/dubins.hh>
 #include <hpp/core/steering-method/hermite.hh>
@@ -45,7 +49,6 @@
 #include "hpp/manipulation/device.hh"
 #include "hpp/manipulation/handle.hh"
 #include "hpp/manipulation/graph/graph.hh"
-#include "hpp/manipulation/symbolic-planner.hh"
 #include "hpp/manipulation/path-planner/rmr-star.hh"
 #include "hpp/manipulation/manipulation-planner.hh"
 #include "hpp/manipulation/roadmap.hh"
@@ -74,6 +77,16 @@ namespace hpp {
         core::pathOptimization::PartialShortcutTraits {
           static bool removeLockedJoints () { return false; }
       };
+
+#define MAKE_GRAPH_PATH_VALIDATION_BUILDER(name, function)                     \
+      PathValidationPtr_t create ## name ## GraphPathValidation (              \
+          const core::DevicePtr_t& robot, const value_type& stepSize)          \
+      {                                                                        \
+        return GraphPathValidation::create (function (robot, stepSize));       \
+      }
+      MAKE_GRAPH_PATH_VALIDATION_BUILDER(DiscretizedCollision             , core::pathValidation::createDiscretizedCollisionChecking)
+      MAKE_GRAPH_PATH_VALIDATION_BUILDER(DiscretizedJointBound            , core::pathValidation::createDiscretizedJointBound)
+      //MAKE_GRAPH_PATH_VALIDATION_BUILDER(DiscretizedCollisionAndJointBound, createDiscretizedJointBoundAndCollisionChecking)
 
       template <typename ParentSM_t, typename ChildSM_t>
       core::SteeringMethodPtr_t createSMWithGuess
@@ -109,8 +122,17 @@ namespace hpp {
       robotType ("hpp::manipulation::Device");
 
       pathPlanners.add ("M-RRT", ManipulationPlanner::create);
-      pathPlanners.add ("SymbolicPlanner", SymbolicPlanner::create);
       pathPlanners.add ("RMR*", pathPlanner::RMRStar::create);
+
+      pathValidations.add ("Graph-Discretized"                      , createDiscretizedCollisionGraphPathValidation);
+      pathValidations.add ("Graph-DiscretizedCollision"             , createDiscretizedCollisionGraphPathValidation);
+      pathValidations.add ("Graph-DiscretizedJointBound"            , createDiscretizedJointBoundGraphPathValidation);
+      //pathValidations.add ("Graph-DiscretizedCollisionAndJointBound", createDiscretizedCollisionAndJointBoundGraphPathValidation);
+      pathValidations.add ("Graph-Dichotomy"  , GraphPathValidation::create<core::continuousValidation::Dichotomy  >);
+      pathValidations.add ("Graph-Progressive", GraphPathValidation::create<core::continuousValidation::Progressive>);
+
+      // TODO Uncomment to make Graph-Discretized the default.
+      //pathValidationType ("Graph-Discretized", 0.05);
 
       pathOptimizers.add ("RandomShortcut",
           pathOptimization::RandomShortcut::create);
@@ -181,11 +203,11 @@ namespace hpp {
     {
       problem_ = problem;
       core::ProblemSolver::initializeProblem (problem_);
-      if (constraintGraph_) {
+      if (constraintGraph_)
         problem_->constraintGraph (constraintGraph_);
-        if (problem_->pathValidation ())
-          problem_->pathValidation ()->constraintGraph (constraintGraph_);
-      }
+      value_type tolerance;
+      const std::string& type = parent_t::pathValidationType (tolerance);
+      problem_->setPathValidationFactory (pathValidations.get(type), tolerance);
     }
 
     void ProblemSolver::constraintGraph (const std::string& graphName)
@@ -357,10 +379,10 @@ namespace hpp {
         const value_type& tolerance)
     {
       parent_t::pathValidationType(type, tolerance);
-      assert (problem_);
-      problem_->setPathValidationFactory (
-          pathValidations.get(type),
-          tolerance);
+      if (problem_)
+        problem_->setPathValidationFactory (
+            pathValidations.get(type),
+            tolerance);
     }
 
     void ProblemSolver::resetRoadmap ()
