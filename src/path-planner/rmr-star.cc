@@ -157,11 +157,12 @@ namespace hpp {
        ConfigurationPtr_t& q)
       {
         bool valid (false); size_type j (0);
+        HierarchicalIterative::Status status;
         while (!valid && j <= maxNbTry) {
           // shoot random configuration
           q = shooter->shoot();
           // project it on state
-          HierarchicalIterative::Status status = solver.solve (*q);
+          status = solver.solve (*q);
           if (status == HierarchicalIterative::SUCCESS) {
             // until it is valid
             ValidationReportPtr_t validationReport;
@@ -169,6 +170,7 @@ namespace hpp {
             ++j;
           }
         } // while (!valid && j <= maxNbTry)
+        assert (!valid || status == HierarchicalIterative::SUCCESS);
         return valid;
       }
 
@@ -231,7 +233,7 @@ namespace hpp {
               continue;
             }
           }
-
+          assert (s_rand->contains (*q));
           // Instantiate right hand side of each constraint
           for (std::size_t i = 0; i < numConstraints.size (); ++i) {
             if (rhsOfConstraint [i].empty ()) {
@@ -453,7 +455,7 @@ namespace hpp {
         std::size_t nWaypoints = waypointEdge->nbWaypoints();
         // log waypoint edge
         hppDout(info,"nWaypoints = "<<nWaypoints);
-        for (std::size_t j = 0; j < nWaypoints; ++j) {
+        for (std::size_t j = 0; j < nWaypoints + 1; ++j) {
           hppDout (info, "waypoint " << j);
           hppDout (info, "  from: "
                    << waypointEdge->waypoint (j)->from ()->name ());
@@ -477,7 +479,7 @@ namespace hpp {
         }
         size_type wp;
         // Detect on which waypoint state q_waypointInter lies
-        for (wp = -1; wp < (size_type) nWaypoints; ++wp) {
+        for (wp = -1; wp < (size_type) nWaypoints + 1; ++wp) {
           graph::StatePtr_t targetState;
           if (wp == -1) {
             targetState = waypointEdge->waypoint(0)->from ();
@@ -498,10 +500,14 @@ namespace hpp {
 
         // Project intersection configuration backward along intermediate
         // transitions
-        std::vector <PathPtr_t> paths ((std::size_t) nWaypoints);
+        std::vector <PathPtr_t> paths ((std::size_t) nWaypoints + 1);
         size_type i;
         Configuration_t q (*q_waypointInter);
-        // q_waypointInter lies on waypoint [wp]->to ()
+        q_prev = q;
+        q_next = q;
+        // q_waypointInter lies on
+        //   - waypoint [wp]->to () if wp >= 0, or
+        //   - waypoint [0]->from () if wp = -1
         for (i = wp; i>=0; --i) {
           graph::EdgePtr_t edge (waypointEdge->waypoint(i));
           graph::StatePtr_t initState (edge->from ());
@@ -562,12 +568,12 @@ namespace hpp {
           // store path to build a path vector afterward
           paths [i] = projPath;
           q = q_prev;
-        }
+        } // for (i = wp; i>=0; --i)
 
         // Project intersection configuration forward along intermediate
         // transitions
         q = *q_waypointInter;
-        for (i = wp + 1; i < (size_type) nWaypoints; ++i) {
+        for (i = wp + 1; i < (size_type) nWaypoints + 1; ++i) {
           graph::EdgePtr_t edge (waypointEdge->waypoint(i));
           graph::StatePtr_t goalState (edge->to ());
           //
@@ -626,7 +632,7 @@ namespace hpp {
           // store path to build a path vector afterward
           paths [i] = projPath;
           q = q_next;
-        }
+        } // for (i = wp + 1; i < (size_type) nWaypoints; ++i)
         // At this point, q_prev and q_next are respectively on latestLeaf
         // and currentLeaf
 
@@ -736,7 +742,7 @@ namespace hpp {
         }
         hppDout(info, "solver inter state " << solver);
         hppDout(info, "error threshold " << solver.errorThreshold ());
-        size_type max_iter (20);
+        size_type max_iter (200);
         while ((valid==false) && i < max_iter)
           {
             //Shoot random configuration
@@ -839,36 +845,33 @@ namespace hpp {
           (latestLeaf_.solver ());
         core::NumericalConstraints_t constraints =solver. numericalConstraints();
 
-        for (std::size_t i=0 ; i<constraints.size() ; i++)
-          {
-            constraints::ImplicitPtr_t function = constraints[i];
-            constraints::vectorOut_t rhs= function->nonConstRightHandSide();
-            bool success = false;
-            success=solver.getRightHandSide(function,rhs);
-            assert (!rhs.hasNaN ());
-            assert (success);
+        for (std::size_t i=0 ; i<constraints.size() ; i++) {
+          constraints::ImplicitPtr_t c (constraints[i]);
+          constraints::vector_t rhs (c->rightHandSideSize ());
+          bool success = false;
+          success=solver.getRightHandSide(c, rhs);
+          assert (!rhs.hasNaN ());
+          assert (success);
 
-            bool null=rhsNull(rhs);
-            bool alreadyInMap=false;
+          bool null=rhsNull(rhs);
+          bool alreadyInMap=false;
 
-            if (!null){
-              for (RightHandSides_t::const_iterator it=rightHandSides_.begin() ;
-                   it!= rightHandSides_.end() ; ++it)
-                {
-                  if (function==(it->first) &&
-                      rhs.isApprox(it->second,solver.errorThreshold()))
-                    {
-                      alreadyInMap=true;
-                    }
-                }
-
-              if(alreadyInMap==false){
-                rightHandSides_.insert
-                  (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
-                   (function,rhs));
+          if (!null) {
+            for (RightHandSides_t::const_iterator it=rightHandSides_.begin() ;
+                 it!= rightHandSides_.end() ; ++it) {
+              if (c==(it->first) &&
+                  rhs.isApprox(it->second,solver.errorThreshold())) {
+                alreadyInMap=true;
               }
             }
+
+            if(alreadyInMap==false) {
+              rightHandSides_.insert
+                (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
+                 (c,rhs));
+            }
           }
+        }
       }
       //////////////////////////////////////////////////////////////////////////
       bool RMRStar::rhsNull (vector_t rhs)

@@ -75,14 +75,14 @@ namespace hpp {
           core::NumericalConstraints_t num = solver_->numericalConstraints();
 
           for (std::size_t i=0 ; i<num.size() ; i++) {
-            constraints::ImplicitPtr_t function = num[i];
-            constraints::vectorOut_t rhs= function->nonConstRightHandSide();
+            constraints::ImplicitPtr_t c = num[i];
+            constraints::vector_t rhs (c->parameterSize ());
             solver_->getRightHandSide(num[i],rhs);
 
-            assert (rightHandSides_.count (function) == 0);
+            assert (rightHandSides_.count (c) == 0);
             rightHandSides_.insert
               (std::pair<constraints::ImplicitPtr_t,constraints::vectorIn_t>
-               (function,rhs));
+               (c,rhs));
           }
         }
 
