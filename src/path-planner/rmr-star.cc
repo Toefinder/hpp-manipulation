@@ -473,25 +473,25 @@ namespace hpp {
 
         // Iterate through all pre-existing leaf roadmaps and try to connect
         // them to the latest leaf roadmap.
-        for (RMRStar::LeafRoadmaps_t::const_iterator itstate
-               (leafRoadmaps_.begin());itstate != leafRoadmaps_.end();
-             ++itstate) {
+        for (RMRStar::LeafRoadmaps_t::const_iterator itRdm
+               (leafRoadmaps_.begin()); itRdm != leafRoadmaps_.end();
+             ++itRdm) {
           // We use the adjective "current" to denote objects related to
-          // the loop iterator "itstate".
+          // the loop iterator "itRdm".
 
           // Current contact state
-          const ContactState&  currentLeaf (itstate->first);
+          const ContactState&  currentLeaf (itRdm->first);
           graph::StatePtr_t currentState = currentLeaf.state ();
           // Current mapping of right hand sides
           ContactState::RightHandSides_t currentLeafRhs
             (currentLeaf.rightHandSides ());
           // current roadmap
-          const core::RoadmapPtr_t& currentRoadmap (itstate->second.second);
-          Nodes_t nodes= currentRoadmap->nodes ();
+          const core::RoadmapPtr_t& currentRoadmap (itRdm->second.second);
+          Nodes_t nodes = currentRoadmap->nodes ();
 
           // check if the states are different and neighbors or are similar
-          std::deque <graph::EdgePtr_t> connectedEdges =
-            getConnectionBetweenStates (latestLeaf_.state (), currentState);
+          std::deque <graph::EdgePtr_t> connectedEdges
+            (getConnectionBetweenStates (latestLeaf_.state (), currentState));
 
           // Whether states of latest leaf and current leaf are neighbors
           // and different
