@@ -26,6 +26,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HPP_DEBUG
+#include <deque>
 #include "hpp/manipulation/path-planner/rmr-star.hh"
 
 #include <hpp/pinocchio/configuration.hh>
@@ -34,6 +35,7 @@
 
 #include <hpp/core/configuration-shooter.hh>
 #include <hpp/core/config-validations.hh>
+#include <hpp/core/config-projector.hh>
 #include <hpp/core/edge.hh>
 #include <hpp/core/path-planner/k-prm-star.hh>
 #include <hpp/core/path-projector.hh>
@@ -63,6 +65,44 @@ namespace hpp {
       typedef constraints::solver::BySubstitution BySubstitution;
       typedef constraints::NumericalConstraints_t NumericalConstraints_t;
       using pinocchio::displayConfig;
+
+      // State shooter
+      //
+      // Randomly shoot a state among those that have minimal number
+      // of implicit constraints
+      class StateShooter
+      {
+      public:
+        StateShooter (const RMRStar::TransitionMap_t& transition) :
+          minDimension_ (std::numeric_limits <size_type>::infinity ()),
+          numberStates_ (transition.size ()), dimensions_ (transition.size ()),
+          states_ (transition.size ())
+        {
+          std::size_t i=0;
+          for (RMRStar::TransitionMap_t::const_iterator it
+                 (transition.begin ()); it != transition.end (); ++it) {
+            size_type rd (it->second->pathConstraint ()->configProjector ()
+                          ->solver ().reducedDimension ());
+            dimensions_ [i] = rd;
+            states_ [i] = it->first; ++i;
+            if (rd < minDimension_) minDimension_ = rd;
+          }
+        }
+        graph::StatePtr_t shoot () const
+        {
+          // Shoot random number among minimal dimension states
+          std::size_t i_rand;
+          do {
+            i_rand=rand() % numberStates_;
+          } while (dimensions_ [i_rand] != minDimension_);
+          return states_ [i_rand].lock ();
+        }
+      private:
+        size_type minDimension_;
+        std::size_t numberStates_;
+        std::vector <size_type> dimensions_;
+        std::vector <graph::StateWkPtr_t> states_;
+      }; // class StateShooter
 
       RMRStarPtr_t RMRStar::create (const core::Problem& problem,
                                     const core::RoadmapPtr_t& roadmap)
@@ -94,41 +134,41 @@ namespace hpp {
         const std::size_t nbComp = graph_->nbComponents();
 
         //create an indexed table with a node as key and the loop edge as value
-        for (std::size_t i=0; i<nbComp; ++i)
-          {
-            const graph::GraphComponentPtr_t graphComp (graph_->get(i));
-
-            graph::EdgePtr_t edge (HPP_DYNAMIC_PTR_CAST(graph::Edge, graphComp));
-
-            if(edge)
-              {
-                if (edge->from()==edge->to())
-
-                  {
-                    transition_[edge->from()]=edge;
-                  }
-              }
+        for (std::size_t i=0; i<nbComp; ++i) {
+          const graph::GraphComponentPtr_t graphComp (graph_->get(i));
+          graph::EdgePtr_t edge (HPP_DYNAMIC_PTR_CAST(graph::Edge, graphComp));
+          if(edge) {
+            if (edge->from()==edge->to()) {
+              transition_[edge->from()]=edge;
+            }
           }
-      }
-
-      ////////////////////////////////////////////////////////////////////////////
-
-      std::vector<graph::StatePtr_t> RMRStar::extract_keys
-      (RMRStar::TransitionMap_t input_map) {
-
-        //create a vector with all the input_map keys
-
-        std::vector<graph::StatePtr_t> retval;
-
-        for (TransitionMap_t::const_iterator i=input_map.begin() ;
-             i!= input_map.end() ; ++i)  {
-
-          retval.push_back(i->first);
         }
-        return retval;
+        stateShooter_ = StateShooterPtr_t (new StateShooter (transition_));
+        // Create matrix of state inclusions
+        stateInclusion_.resize (nbComp, nbComp);
+        stateInclusion_.fill (false);
+        for (std::size_t i1=0; i1<nbComp; ++i1) {
+          const graph::GraphComponentPtr_t graphComp (graph_->get(i1));
+          graph::StatePtr_t s1 (HPP_DYNAMIC_PTR_CAST(graph::State, graphComp));
+          if(s1) {
+            for (std::size_t i2=0; i2<nbComp; ++i2) {
+              const graph::GraphComponentPtr_t graphComp (graph_->get(i2));
+              graph::StatePtr_t s2 (HPP_DYNAMIC_PTR_CAST
+                                   (graph::State, graphComp));
+              if(s2) {
+                assert (s1->id () == i1 && s2->id () == i2);
+                if (s1->configConstraint ()->configProjector ()->solver ().
+                    definesSubmanifoldOf
+                    (s2->configConstraint ()->configProjector ()->solver ())) {
+                  stateInclusion_ (i1, i2) = true;
+                }
+              }
+            }
+          }
+        }
       }
 
-      ////////////////////////////////////////////////////////////////////////////
+      //////////////////////////////////////////////////////////////////////////
 
       bool sampleInState (const graph::StatePtr_t& state,
                           const ConfigurationShooterPtr_t& shooter,
@@ -180,13 +220,9 @@ namespace hpp {
                             ("RMR*/nbTryRandomConfig").intValue ());
         ConfigurationShooterPtr_t shooter
           (manipulationProblem_.configurationShooter ());
-        std::size_t nbStates (transition_.size ());
-        // Shoot random number
-        std::size_t i_rand=rand() % nbStates;
 
         // Sample random state of the graph
-        const graph::StatePtr_t s_rand =
-          RMRStar::extract_keys(transition_)[i_rand];
+        const graph::StatePtr_t s_rand = stateShooter_->shoot ();
 
         bool stateValid = false;
         ConfigurationPtr_t q;
@@ -256,6 +292,7 @@ namespace hpp {
           }
           // At this point, the right hand side of the solver is set.
           // We now sample a valid configuration with solver
+          hppDout (info, solver);
           stateValid = sampleValidConfiguration
             (solver, shooter, configValidations, maxNbTry, q);
         } // while (!stateValid)
@@ -332,6 +369,101 @@ namespace hpp {
         }
       }
 
+      // Compute sequence of edges that connect s1 to s2
+      // Waypoint edges are expanded.
+      // Run a breadth first search of maximal depth 2.
+      std::deque <graph::EdgePtr_t> RMRStar::getConnectionBetweenStates
+      (const graph::StatePtr_t& s1, const graph::StatePtr_t& s2)
+      {
+        std::deque <graph::EdgePtr_t> result;
+        // If s1 and s2 are the same state, return loop transition
+        graph::StatePtr_t s (s1);
+        if (s1 == s2) {
+          RMRStar::TransitionMap_t::const_iterator it = transition_.find (s);
+          assert (it != transition_.end ());
+          result.push_back (it->second);
+          return result;
+        }
+        // Explore graph breadth first search up to depth 2
+        std::set <graph::StatePtr_t> visited; visited.insert (s);
+        std::list <graph::StatePtr_t> queue; queue.push_back (s);
+        bool s2_reached = false;
+        std::map <graph::StatePtr_t, graph::EdgePtr_t> reached_by;
+        std::map <graph::StatePtr_t, size_type> depth; depth [s] = 0;
+        graph::StatePtr_t next;
+        while (!queue.empty () && !s2_reached) {
+          graph::Edges_t::const_iterator it;
+          // Dequeue a state from queue
+          s = queue.front ();
+          queue.pop_front ();
+          if (depth [s] < 2) {
+            // Get all adjacent states of the dequeued
+            // vertex s. If a adjacent has not been visited,
+            // then mark it visited and enqueue it
+            graph::Edges_t outEdges (s->neighborEdges ());
+            for (it = outEdges.begin (); it != outEdges.end (); ++it) {
+              next = (*it)->to ();
+              // if next has not already been visited,
+              //   - register it as visited,
+              //   - insert it in the queue,
+              //   - register edge that led to it,
+              //   - register depth
+              if (visited.find (next) == visited.end ()) {
+                reached_by [next] = *it;
+                depth [next] = depth [s] + 1;
+                visited.insert (next);
+                queue.push_back (next);
+              }
+              if (next == s2) {
+                // the goal state is reached
+                s2_reached = true;
+                break;
+              }
+            }
+          }
+        }
+        // if s2 has been reached
+        if (s2_reached) {
+          // Check condition
+          // s2 is reachable from s1 by an edge, of
+          // s2 is reachable from s1 by traversing a state that is
+          if ((depth [next] == 1) ||
+              ((depth [next] == 2) &&
+               (stateInclusion_ (reached_by [next]->from ()->id (),
+                                 s1->id ())) &&
+               (stateInclusion_ (reached_by [next]->from ()->id (),
+                                 s2->id ())))) {
+            std::map <graph::StatePtr_t,
+                      graph::EdgePtr_t>::const_iterator it
+              (reached_by.find (next));
+            while (it != reached_by.end ()) {
+              graph::EdgePtr_t edge (it->second);
+              // If edge is waypoint edge, extract elementary edges
+              graph::WaypointEdgePtr_t wpe
+                (HPP_DYNAMIC_PTR_CAST (graph::WaypointEdge, edge));
+              if (wpe) {
+                size_type n ((size_type) wpe->nbWaypoints () + 1);
+                for (size_type i=n-1; i>=0; --i) {
+                  result.push_front (wpe->waypoint (i));
+                }
+              } else {
+                result.push_front (edge);
+              }
+              next = edge->from ();
+              it = reached_by.find (next);
+            }
+          }
+          hppDout (info, "path between");
+          hppDout (info, "\"" << s1->name () << "\"");
+          hppDout (info, " and ");
+          hppDout (info, "\"" << s2->name () << "\"");
+          for (std::size_t i = 0; i < result.size (); ++i) {
+            hppDout (info, result [i]->name ());
+          }
+        }
+        return result;
+      }
+
       ////////////////////////////////////////////////////////////////////////////
 
       void RMRStar::connectRoadmap ()
@@ -357,17 +489,15 @@ namespace hpp {
           const core::RoadmapPtr_t& currentRoadmap (itstate->second.second);
           Nodes_t nodes= currentRoadmap->nodes ();
 
-          // check if the states are different and neighboors or are similar
-          graph::Edges_t connectedEdges =
-            graph_->getEdges(latestLeaf_.state (),currentState);
-
-          assert (connectedEdges.size()<=1);
+          // check if the states are different and neighbors or are similar
+          std::deque <graph::EdgePtr_t> connectedEdges =
+            getConnectionBetweenStates (latestLeaf_.state (), currentState);
 
           // Whether states of latest leaf and current leaf are neighbors
           // and different
           bool neighborStates = (!connectedEdges.empty ()) &&
-            (latestLeaf_.state () !=currentState);
-          bool valid=false;
+            (latestLeaf_.state () != currentState);
+          bool valid = false;
 
           // Get solver projecting on latest leaf explored
           BySubstitution latestLeafSolver
@@ -386,9 +516,14 @@ namespace hpp {
                it!=latestLeaf_.rightHandSides ().end(); ++it) {
             for (ContactState::RightHandSides_t::const_iterator i=currentLeafRhs.begin();
                  i!=currentLeafRhs.end(); ++i) {
-              if (it->first == i->first && it->second!=i->second ) {
+              if (it->first == i->first && !it->second.isApprox
+                  (i->second, errorThreshold)) {
                 //les fonctions sont egale mais pas les rhs
                 rhsEqual=false;
+                hppDout (info, it->first->function ().name ());
+                hppDout (info, displayConfig (it->second));
+                hppDout (info, i->first->function ().name ());
+                hppDout (info, displayConfig (i->second));
                 break;
               }
             }
@@ -398,52 +533,29 @@ namespace hpp {
 
           // Test whether latest roadmap and current roadmap are in neighbor
           // states and accessible, or
-          // are on he same leaf of the same state.
+          // are on the same leaf of the same state.
           if ((neighborStates && rhsEqual) ||
               (latestLeaf_.state () == currentState &&
                latestLeaf_.rightHandSide ().isApprox
                (currentLeaf.rightHandSide (), errorThreshold))) {
-            if (latestLeaf_.state () == currentState &&
-                latestLeaf_.rightHandSide ().isApprox
-                (currentLeaf.rightHandSide (), errorThreshold)) {
-              hppDout (info, displayConfig (latestLeaf_.rightHandSide ()));
-              hppDout (info, displayConfig (currentLeaf.rightHandSide ()));
-            }
-            graph::WaypointEdgePtr_t waypointEdge
-              (HPP_DYNAMIC_PTR_CAST(graph::WaypointEdge,connectedEdges[0]));
-
-            if (waypointEdge) {
-              assert (latestLeaf_.state ()!=currentState);
-              hppDout(info, "Problème avec Waypoints");
-
-              connectStatesByWaypoints
-                (waypointEdge, currentLeaf, latestLeaf_,
-                 k, validationReport, valid, currentRoadmap, currentState);
-            }
-            else {
-              hppDout(info, "Problème sans Waypoints");
-
-              connectDirectStates
-                (currentLeaf, latestLeaf_, validationReport, k, valid,
-                 currentState, currentRoadmap);
-            }
+            connectContactStateRoadmaps
+              (connectedEdges, currentLeaf, latestLeaf_, k, validationReport,
+               valid, currentRoadmap);
           }
         }
         storeLeafRoadmap();
       }
 
-      void RMRStar::connectStatesByWaypoints
-      (const graph::WaypointEdgePtr_t& waypointEdge,
+      void RMRStar::connectContactStateRoadmaps
+      (const std::deque <graph::EdgePtr_t>& connectedEdges,
        const ContactState& currentLeaf, const ContactState& latestLeaf,
        size_type k,
        ValidationReportPtr_t& validationReport, bool valid,
-       const core::RoadmapPtr_t& roadmap,
-       const graph::StatePtr_t& currentState)
+       const core::RoadmapPtr_t& roadmap)
       {
-        assert (latestLeaf.state () == waypointEdge->from ());
-        assert (currentLeaf.state () == waypointEdge->to ());
+        assert (latestLeaf.state () == connectedEdges.front ()->from ());
+        assert (currentLeaf.state () == connectedEdges.back ()->to ());
         size_type max_iter (20);
-        assert (currentState == waypointEdge->to ());
         // Current mapping of right hand sides
         ContactState::RightHandSides_t currentLeafRhs
           (currentLeaf.rightHandSides ());
@@ -452,15 +564,15 @@ namespace hpp {
           (manipulationProblem_.configValidations ());
 
         //get waypoints constraints
-        std::size_t nWaypoints = waypointEdge->nbWaypoints();
+        std::size_t nWaypoints = connectedEdges.size ();
         // log waypoint edge
-        hppDout(info,"nWaypoints = "<<nWaypoints);
-        for (std::size_t j = 0; j < nWaypoints + 1; ++j) {
+        hppDout(info,"nWaypoints = "<< nWaypoints);
+        for (std::size_t j = 0; j < nWaypoints; ++j) {
           hppDout (info, "waypoint " << j);
           hppDout (info, "  from: "
-                   << waypointEdge->waypoint (j)->from ()->name ());
+                   << connectedEdges [j]->from ()->name ());
           hppDout (info, "  to  : "
-                   << waypointEdge->waypoint (j)->to ()->name ());
+                   << connectedEdges [j]->to ()->name ());
         }
         ConfigurationPtr_t q_waypointInter;
         PathPtr_t path, projPath, validPath;
@@ -470,21 +582,21 @@ namespace hpp {
         // Generate configuration at intersection of both leaves
         q_waypointInter = createInterStateConfig
           (currentLeaf, latestLeaf, configValidations, validationReport,
-           valid, currentState);
+           valid, currentLeaf.state ());
         if (!q_waypointInter) {
           hppDout (info, "Failed to generate configuration at intersection of "
-                   " contact states " << currentState->name () <<
+                   " contact states " << currentLeaf.state ()->name () <<
                    " and " << latestLeaf.state ()->name ());
           return;
         }
         size_type wp;
         // Detect on which waypoint state q_waypointInter lies
-        for (wp = -1; wp < (size_type) nWaypoints + 1; ++wp) {
+        for (wp = -1; wp < (size_type) nWaypoints; ++wp) {
           graph::StatePtr_t targetState;
           if (wp == -1) {
-            targetState = waypointEdge->waypoint(0)->from ();
+            targetState = connectedEdges [0]->from ();
           } else {
-            targetState = waypointEdge->waypoint(wp)->to ();
+            targetState = connectedEdges [wp]->to ();
           }
 
           if (targetState->configConstraint ()->configProjector ()->solver ().
@@ -500,7 +612,7 @@ namespace hpp {
 
         // Project intersection configuration backward along intermediate
         // transitions
-        std::vector <PathPtr_t> paths ((std::size_t) nWaypoints + 1);
+        std::vector <PathPtr_t> paths ((std::size_t) nWaypoints);
         size_type i;
         Configuration_t q (*q_waypointInter);
         q_prev = q;
@@ -509,7 +621,7 @@ namespace hpp {
         //   - waypoint [wp]->to () if wp >= 0, or
         //   - waypoint [0]->from () if wp = -1
         for (i = wp; i>=0; --i) {
-          graph::EdgePtr_t edge (waypointEdge->waypoint(i));
+          graph::EdgePtr_t edge (connectedEdges [i]);
           graph::StatePtr_t initState (edge->from ());
           //
           // project q on initState -> q_prev
@@ -573,8 +685,8 @@ namespace hpp {
         // Project intersection configuration forward along intermediate
         // transitions
         q = *q_waypointInter;
-        for (i = wp + 1; i < (size_type) nWaypoints + 1; ++i) {
-          graph::EdgePtr_t edge (waypointEdge->waypoint(i));
+        for (i = wp + 1; i < (size_type) nWaypoints; ++i) {
+          graph::EdgePtr_t edge (connectedEdges [i]);
           graph::StatePtr_t goalState (edge->to ());
           //
           // project q on initState -> q_next
@@ -664,41 +776,6 @@ namespace hpp {
              itNode != nearNodes.end (); ++itNode) {
           connectConfigToNode (transition_ [currentLeaf.state ()],
                                pQnext, (*itNode)->configuration ());
-        }
-      }
-
-      ////////////////////////////////////////////////////////////////////////
-
-      void RMRStar::connectDirectStates
-      (const ContactState& currentLeaf, const ContactState& latestLeaf,
-       ValidationReportPtr_t& validationReport, size_type k, bool valid,
-       const graph::StatePtr_t& currentState, const core::RoadmapPtr_t& roadmap)
-      {
-        ConfigValidationsPtr_t configValidations
-          (manipulationProblem_.configValidations ());
-        ConfigurationPtr_t q_inter = createInterStateConfig
-          (currentLeaf, latestLeaf, configValidations, validationReport,
-           valid, currentState);
-        if (q_inter) {
-          graph::EdgePtr_t edgeTransit =transition_[latestLeaf_.state()];
-          Nodes_t nearNodes = latestRoadmap_->nearestNodes(q_inter,k);
-          core::ConstraintSetPtr_t constraintTRansit =
-            edgeTransit->configConstraint();
-
-          for (Nodes_t :: const_iterator itnode = nearNodes.
-                 begin(); itnode !=nearNodes.end(); itnode++ ) {
-            ConfigurationPtr_t nodeConfig = (*itnode)->configuration();
-            connectConfigToNode (edgeTransit,q_inter,nodeConfig);
-          }
-          graph::EdgePtr_t edge =transition_[currentState];
-          Nodes_t nearestNodes = roadmap->nearestNodes(q_inter,k);
-          core::ConstraintSetPtr_t constraint =  edge->configConstraint();
-
-          for (Nodes_t :: const_iterator it = nearestNodes.
-                 begin(); it != nearestNodes.end(); it++ ) {
-            ConfigurationPtr_t nodeConfig = (*it)->configuration();
-            connectConfigToNode (edge,q_inter,nodeConfig);
-          }
         }
       }
 

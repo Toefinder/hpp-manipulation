@@ -51,6 +51,8 @@ namespace hpp {
       public:
 
         typedef rmrStar::ContactState ContactState;
+	typedef std::map <graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
+	TransitionMap_t transition_;
 
         /// Create an instance and return a shared pointer to the instance
         /// \param problem reference to the problem to be solved,
@@ -100,8 +102,6 @@ namespace hpp {
 
 	STEP step_;
 
-	typedef std::map <graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
-	TransitionMap_t transition_;
         /// Pair (problem, roadmap)
 	typedef std::pair<core::Problem, core::RoadmapPtr_t>
           ProblemAndRoadmap_t;
@@ -109,8 +109,13 @@ namespace hpp {
 	typedef std::multimap <ContactState , ProblemAndRoadmap_t>
           LeafRoadmaps_t;
 	LeafRoadmaps_t leafRoadmaps_;
-
-
+        /// Matrix of inclusion between states
+        /// if stateInclusion_ (s1->id (), s2->id ()) is true, s1 is included
+        /// in s2.
+        Eigen::Matrix <bool, Eigen::Dynamic, Eigen::Dynamic> stateInclusion_;
+        /// Shooter that uniformly samples states with minimal number of
+        /// implicit constraints.
+        StateShooterPtr_t stateShooter_;
 	/// Pointer to the problem
         const Problem& manipulationProblem_;
 
@@ -136,10 +141,6 @@ namespace hpp {
 	///its loop edge associated as value
 	void computeTransitionMap ();
 
-	/// Return a vector containing the states of the graph
-	/// \param input_map map containnig the states of the graph and its loop edge associated
-	std::vector<graph::StatePtr_t> extract_keys(TransitionMap_t input_map);
-
 	///Compute a roadmap in the initial configuration and final configuration leaf
 	///and try to connect them
 	void startSolve ();
@@ -151,7 +152,17 @@ namespace hpp {
 	///Copy a roadmap in PathPlanner roadmap
 	void copyRoadmapIntoGlobal (const core::RoadmapPtr_t& r);
 
-	///Connect the roadmaps build on different leaves
+        /// Find sequence of edges connecting two states
+        ///
+        /// An empty sequence is returned if none of the two following
+        /// conditions are not met
+        /// \li s2 is reachable from s1 by an edge,
+        /// \li s2 is reachable from s1 by traversing a state that is
+        ///     included in s1 and s2.
+        std::deque <graph::EdgePtr_t> getConnectionBetweenStates
+          (const graph::StatePtr_t& s1, const graph::StatePtr_t& s2);
+
+        ///Connect the roadmaps build on different leaves
 	void connectRoadmap ();
 
 	///Store the contactStates, the roadmaps  and the problems associated
@@ -170,36 +181,36 @@ namespace hpp {
 
 
 	/// Connect two roadmaps (latestRoadmap_ and an other one)
-	/// in adjacent states connected directly
-	/// \li shoot a random config in the intersection of the two roadmaps
-	/// \li connect it with the k nearest nodes of each roadmap
-	/// \param roadmap the roadmap we want to connect with latestRoadmap_
-	/// \param k the nb of nearest nodes we connect to the intersection node
-	/// \param state the state of the roadmap leaf
-	void connectDirectStates
-          (const ContactState& currentLeaf, const ContactState& latestLeaf,
-           core::ValidationReportPtr_t& validationReport,
-           size_type k, bool valid, const graph::StatePtr_t& currentState,
-           const core::RoadmapPtr_t& roadmap);
-
-	/// Connect two roadmaps (latestRoadmap_ and an other one)
-	/// in adjacent states connected using waypoints
-	/// \li shoot a random config in the intersection of the two roadmaps
+	///
+        /// roadmaps should be in states that have a non empty intersection.
+        /// They should be
+        /// \li either in the same state and the same leaf,
+        /// \li either in two states separated by a state that lies at the
+        ///     intersection of the former.
+	/// \li shoot a random config in the intersection of the two leaves
 	/// \li identify wich waypoint correspond to the intersect one
-	/// \li connect the waypoints from the intersection config to the first one
-	/// \li connect the first waypoint with the k nearest nodes of interRoadmpap_
-	/// \li connect the waypoints from the intersection config to the last one
+	/// \li connect the waypoints from the intersection config to the first
+        ///     one
+	/// \li connect the first waypoint with the k nearest nodes of
+        ///     interRoadmpap_
+	/// \li connect the waypoints from the intersection config to the last
+        ///     one
 	/// \li connect the last waypoint with the k nearest nodes of roadmap_
+        ///
+        /// \param connectedEdges list of edges linking the states of the
+        ///        roadmap. This can correspond to one of two edges. Waypoint
+        ///        edges are expanded.
+        /// \param currentLeaf, latestLeaf Leaves in which the roadmap lie.
 	/// \param roadmap the roadmap we want to connect with latestRoadmap_
-	/// \param k the nb of nearest nodes we connect to the first and last waypoint
+	/// \param k the nb of nearest nodes we connect to the first and last
+        ///        waypoint
 	/// \param state the state of the roadmap leaf
-	void connectStatesByWaypoints
-          (const graph::WaypointEdgePtr_t& waypointEdge,
+	void connectContactStateRoadmaps
+          (const std::deque <graph::EdgePtr_t>& connectedEdges,
            const ContactState& currentLeaf, const ContactState& latestLeaf,
            size_type k,
            core::ValidationReportPtr_t& validationReport, bool valid,
-           const core::RoadmapPtr_t& roadmap,
-           const graph::StatePtr_t& currentState);
+           const core::RoadmapPtr_t& roadmap);
 
 	///Add two nodes to the roadmap_ and create an edge between them
       /// \param edge edge of the graph between the respective states of the nodes

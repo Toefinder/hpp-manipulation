@@ -25,9 +25,10 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
-
+#define HPP_DEBUG
 #include <hpp/manipulation/path-planner/rmr-star/contact-state.hh>
 
+#include <hpp/pinocchio/configuration.hh>
 #include <hpp/pinocchio/device.hh>
 
 #include <hpp/constraints/solver/by-substitution.hh>
@@ -69,6 +70,7 @@ namespace hpp {
                    (constraints->configProjector ()->solver ())),
           config_(config), rightHandSides_()
         {
+          hppDout (info, pinocchio::displayConfig (config));
           assert (state->contains (config));
           rightHandSide_ =
             solver_->rightHandSideFromConfig (config);
@@ -76,7 +78,7 @@ namespace hpp {
 
           for (std::size_t i=0 ; i<num.size() ; i++) {
             constraints::ImplicitPtr_t c = num[i];
-            constraints::vector_t rhs (c->parameterSize ());
+            constraints::vector_t rhs (c->rightHandSideSize ());
             solver_->getRightHandSide(num[i],rhs);
 
             assert (rightHandSides_.count (c) == 0);
