@@ -224,35 +224,35 @@ namespace hpp {
         // Sample random state of the graph
         const graph::StatePtr_t s_rand = stateShooter_->shoot ();
 
-        bool stateValid = false;
+        bool validConfig = false;
         ConfigurationPtr_t q;
 
-        while (!stateValid) {
+        while (!validConfig) {
           ValidationReportPtr_t validationReport;
           ConfigValidationsPtr_t configValidations
             (problem ().configValidations ());
 
-          ConstraintSetPtr_t stateConfig =
+          ConstraintSetPtr_t transitionConstraint =
             graph_->configConstraint (transition_[s_rand]);
-          NumericalConstraints_t numConstraints =
-            stateConfig->configProjector ()->numericalConstraints();
+          NumericalConstraints_t transitionConstraints =
+            transitionConstraint->configProjector ()->numericalConstraints();
 
           BySubstitution solver
-            (stateConfig->configProjector ()->solver ());
+            (transitionConstraint->configProjector ()->solver ());
 
           // Check whether right hand side of each constraint has already
           // been instantiated. If not, a random configuration needs to be
           // sampled in this state.
           bool needToSample (false);
           std::vector < std::vector <constraints::vector_t> >
-            rhsOfConstraint (numConstraints.size ());
-          for (std::size_t i = 0; i < numConstraints.size (); ++i) {
+            rhsOfConstraint (transitionConstraints.size ());
+          for (std::size_t i = 0; i < transitionConstraints.size (); ++i) {
             // retrieve right hand sides already used for randomly selected
             // constraint.
             for (RightHandSides_t::const_iterator it=rightHandSides_.begin ();
                  it!= rightHandSides_.end () ; ++it) {
               if (it->first->functionPtr ()->name () ==
-                  numConstraints [i]->functionPtr ()->name ()) {
+                  transitionConstraints [i]->functionPtr ()->name ()) {
                 rhsOfConstraint [i].push_back (it->second);
               }
             }
@@ -271,13 +271,13 @@ namespace hpp {
           }
           assert (s_rand->contains (*q));
           // Instantiate right hand side of each constraint
-          for (std::size_t i = 0; i < numConstraints.size (); ++i) {
+          for (std::size_t i = 0; i < transitionConstraints.size (); ++i) {
             if (rhsOfConstraint [i].empty ()) {
               // Initialize right hand side with random configuration
 #ifndef NDEBUG
               bool success =
 #endif
-                solver.rightHandSideFromConfig (numConstraints [i], *q);
+                solver.rightHandSideFromConfig (transitionConstraints [i], *q);
               assert (success);
             } else {
               // Sample right hand side among already instantiated
@@ -285,7 +285,7 @@ namespace hpp {
 #ifndef NDEBUG
               bool success =
 #endif
-                solver.rightHandSide (numConstraints [i],
+                solver.rightHandSide (transitionConstraints [i],
                                       rhsOfConstraint [i] [indice_rand]);
               assert (success);
             }
@@ -293,9 +293,9 @@ namespace hpp {
           // At this point, the right hand side of the solver is set.
           // We now sample a valid configuration with solver
           hppDout (info, solver);
-          stateValid = sampleValidConfiguration
+          validConfig = sampleValidConfiguration
             (solver, shooter, configValidations, maxNbTry, q);
-        } // while (!stateValid)
+        } // while (!validConfig)
 
         //Get loop_edge constraints
         graph::EdgePtr_t loop_edge = transition_ [s_rand];
@@ -511,11 +511,12 @@ namespace hpp {
           pinocchio::value_type errorThreshold
             (biggestThreshold (latestLeafSolver, currentLeafSolver));
 
+          // Check that common constraints share right hand sides.
           for (ContactState::RightHandSides_t::const_iterator it
                  (latestLeaf_.rightHandSides ().begin());
                it!=latestLeaf_.rightHandSides ().end(); ++it) {
-            for (ContactState::RightHandSides_t::const_iterator i=currentLeafRhs.begin();
-                 i!=currentLeafRhs.end(); ++i) {
+            for (ContactState::RightHandSides_t::const_iterator i
+                   (currentLeafRhs.begin()); i!=currentLeafRhs.end(); ++i) {
               if (it->first == i->first && !it->second.isApprox
                   (i->second, errorThreshold)) {
                 //les fonctions sont egale mais pas les rhs
@@ -538,6 +539,7 @@ namespace hpp {
               (latestLeaf_.state () == currentState &&
                latestLeaf_.rightHandSide ().isApprox
                (currentLeaf.rightHandSide (), errorThreshold))) {
+            // Try to connect leaf roadmaps.
             connectContactStateRoadmaps
               (connectedEdges, currentLeaf, latestLeaf_, k, validationReport,
                valid, currentRoadmap);
