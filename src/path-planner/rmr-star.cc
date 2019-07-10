@@ -1110,9 +1110,11 @@ namespace hpp {
       RMRStar::RMRStar (const core::Problem& problem,
                         const core::RoadmapPtr_t& roadmap) :
         core::PathPlanner (problem, roadmap),
-        transition_ (), manipulationProblem_
+        manipulationProblem_
         (static_cast <const manipulation::Problem& > (problem)),
-        roadmap_ (HPP_STATIC_PTR_CAST (manipulation::Roadmap, roadmap))
+        roadmap_ (HPP_STATIC_PTR_CAST (manipulation::Roadmap, roadmap)),
+        transition_ ()
+
       {
 #ifndef NDEBUG
         dynamic_cast <const manipulation::Problem& > (problem);

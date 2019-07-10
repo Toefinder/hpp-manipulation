@@ -52,7 +52,6 @@ namespace hpp {
 
         typedef rmrStar::ContactState ContactState;
 	typedef std::map <graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
-	TransitionMap_t transition_;
 
         /// Create an instance and return a shared pointer to the instance
         /// \param problem reference to the problem to be solved,
@@ -126,6 +125,9 @@ namespace hpp {
 	///a configuration with a random right hand side
 	size_type setRhsFreq_;
 
+        /// Mapping between states and loop transitions.
+	TransitionMap_t transition_;
+
 	///Counter
 	int counter_;
 
@@ -159,6 +161,9 @@ namespace hpp {
         /// \li s2 is reachable from s1 by an edge,
         /// \li s2 is reachable from s1 by traversing a state that is
         ///     included in s1 and s2.
+        ///
+        /// The result is the concatenation of edges connecting s1 to s2.
+        /// Waypoint edges are expanded
         std::deque <graph::EdgePtr_t> getConnectionBetweenStates
           (const graph::StatePtr_t& s1, const graph::StatePtr_t& s2);
 
