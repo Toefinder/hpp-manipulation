@@ -108,10 +108,17 @@ namespace hpp {
 	typedef std::multimap <ContactState , ProblemAndRoadmap_t>
           LeafRoadmaps_t;
 	LeafRoadmaps_t leafRoadmaps_;
+        /// Index in allStates_ from shared pointer to state
+        std::map <graph::StatePtr_t, size_type> index_;
         /// Matrix of inclusion between states
         /// if stateInclusion_ (s1->id (), s2->id ()) is true, s1 is included
         /// in s2.
         Eigen::Matrix <bool, Eigen::Dynamic, Eigen::Dynamic> stateInclusion_;
+        /// Matrix of intersection between states
+        // if stateIntersection (i1, i2) = s,
+        // statesToSample_ [i1] inter statesToSample_ [i2] = s
+        Eigen::Matrix <graph::StatePtr_t, Eigen::Dynamic, Eigen::Dynamic>
+          stateIntersection_;
         /// Shooter that uniformly samples states with minimal number of
         /// implicit constraints.
         StateShooterPtr_t stateShooter_;
@@ -128,6 +135,14 @@ namespace hpp {
         /// Mapping between states and loop transitions.
 	TransitionMap_t transition_;
 
+        /// Vector of all states including waypoint states
+        graph::States_t allStates_;
+
+        /// Vector of states with loop transitions
+        graph::States_t statesWithLoops_;
+
+        /// Vector of states with transitions of minimal reduced dimension
+        graph::States_t statesToSample_;
 	///Counter
 	int counter_;
 
@@ -141,7 +156,7 @@ namespace hpp {
 
 	///Complete the map transition_ with the states of the graph as key and
 	///its loop edge associated as value
-	void computeTransitionMap ();
+	void initialize ();
 
 	///Compute a roadmap in the initial configuration and final configuration leaf
 	///and try to connect them

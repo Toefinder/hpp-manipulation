@@ -68,40 +68,23 @@ namespace hpp {
 
       // State shooter
       //
-      // Randomly shoot a state among those that have minimal number
-      // of implicit constraints
+      // Randomly shoot a state among those provided as input
       class StateShooter
       {
       public:
-        StateShooter (const RMRStar::TransitionMap_t& transition) :
-          minDimension_ (std::numeric_limits <size_type>::infinity ()),
-          numberStates_ (transition.size ()), dimensions_ (transition.size ()),
-          states_ (transition.size ())
+        StateShooter (const graph::States_t& states) :
+          states_ (states)
         {
-          std::size_t i=0;
-          for (RMRStar::TransitionMap_t::const_iterator it
-                 (transition.begin ()); it != transition.end (); ++it) {
-            size_type rd (it->second->pathConstraint ()->configProjector ()
-                          ->solver ().reducedDimension ());
-            dimensions_ [i] = rd;
-            states_ [i] = it->first; ++i;
-            if (rd < minDimension_) minDimension_ = rd;
-          }
         }
         graph::StatePtr_t shoot () const
         {
           // Shoot random number among minimal dimension states
           std::size_t i_rand;
-          do {
-            i_rand=rand() % numberStates_;
-          } while (dimensions_ [i_rand] != minDimension_);
-          return states_ [i_rand].lock ();
+          i_rand=rand() % states_.size ();
+          return states_ [i_rand];
         }
       private:
-        size_type minDimension_;
-        std::size_t numberStates_;
-        std::vector <size_type> dimensions_;
-        std::vector <graph::StateWkPtr_t> states_;
+        graph::States_t states_;
       }; // class StateShooter
 
       RMRStarPtr_t RMRStar::create (const core::Problem& problem,
@@ -127,41 +110,82 @@ namespace hpp {
         return shPtr;
       }
 
-      void RMRStar::computeTransitionMap ()
+      void RMRStar::initialize ()
       {
-        // Access to the constraint graph
-
+        size_type minDimension (std::numeric_limits <size_type>::infinity ());
         const std::size_t nbComp = graph_->nbComponents();
-
         //create an indexed table with a node as key and the loop edge as value
         for (std::size_t i=0; i<nbComp; ++i) {
           const graph::GraphComponentPtr_t graphComp (graph_->get(i));
           graph::EdgePtr_t edge (HPP_DYNAMIC_PTR_CAST(graph::Edge, graphComp));
           if(edge) {
-            if (edge->from()==edge->to()) {
-              transition_[edge->from()]=edge;
+            if (edge->from() == edge->to()) {
+              transition_ [edge->from()] = edge;
+              statesWithLoops_.push_back (edge->from ());
+              // Compute minimal reduced dimension among loop edges
+              size_type rd (edge->pathConstraint ()->configProjector ()->
+                            solver().reducedDimension ());
+              if (rd < minDimension) minDimension = rd;
+            }
+          } else {
+            graph::StatePtr_t state (HPP_DYNAMIC_PTR_CAST
+                                     (graph::State, graphComp));
+            if (state) {
+              index_ [state] = allStates_.size ();
+              allStates_.push_back (state);
             }
           }
         }
-        stateShooter_ = StateShooterPtr_t (new StateShooter (transition_));
-        // Create matrix of state inclusions
-        stateInclusion_.resize (nbComp, nbComp);
+        // Number of states that have a loop transition
+        size_type nStates ((size_type) allStates_.size ());
+        // Store states with loop transitions of minimal reduced dimension
+        for (graph::States_t::const_iterator it (statesWithLoops_.begin ());
+             it != statesWithLoops_.end (); ++it) {
+          if (transition_ [*it]->pathConstraint ()->configProjector ()->
+              solver ().reducedDimension () == minDimension) {
+            statesToSample_.push_back (*it);
+          }
+        }
+        // Set state shooter
+        stateShooter_ = StateShooterPtr_t (new StateShooter (statesToSample_));
+
+        // Create matrix of state inclusions. Only states with loop transitions
+        // are considered
+        stateInclusion_.resize (nStates, nStates);
         stateInclusion_.fill (false);
-        for (std::size_t i1=0; i1<nbComp; ++i1) {
-          const graph::GraphComponentPtr_t graphComp (graph_->get(i1));
-          graph::StatePtr_t s1 (HPP_DYNAMIC_PTR_CAST(graph::State, graphComp));
-          if(s1) {
-            for (std::size_t i2=0; i2<nbComp; ++i2) {
-              const graph::GraphComponentPtr_t graphComp (graph_->get(i2));
-              graph::StatePtr_t s2 (HPP_DYNAMIC_PTR_CAST
-                                   (graph::State, graphComp));
-              if(s2) {
-                assert (s1->id () == i1 && s2->id () == i2);
-                if (s1->configConstraint ()->configProjector ()->solver ().
-                    definesSubmanifoldOf
-                    (s2->configConstraint ()->configProjector ()->solver ())) {
-                  stateInclusion_ (i1, i2) = true;
-                }
+        for (std::size_t i1=0; i1 < (std::size_t) nStates; ++i1) {
+          const graph::StatePtr_t& s1 (allStates_ [i1]);
+          assert (s1);
+          for (std::size_t i2=0; i2 < (std::size_t) nStates; ++i2) {
+            const graph::StatePtr_t& s2 (allStates_ [i2]);
+            assert (s2);
+            if (s1->configConstraint ()->configProjector ()->solver ().
+                definesSubmanifoldOf
+                (s2->configConstraint ()->configProjector ()->solver ())) {
+              stateInclusion_ (i1, i2) = true;
+              hppDout (info, "\"" << s1->name () << "\"");
+              hppDout (info, "subset of");
+              hppDout (info, "\"" << s2->name () << "\"");
+              hppDout (info, "");
+            }
+          }
+        }
+        stateIntersection_.resize (allStates_.size (),
+                                   allStates_.size ());
+        for (std::size_t i1=0; i1<allStates_.size (); ++i1) {
+          const graph::StatePtr_t& s1 (allStates_ [i1]);
+          stateIntersection_ (i1, i1) = s1;
+          for (std::size_t i2=i1+1; i2<allStates_.size (); ++i2) {
+            const graph::StatePtr_t& s2 (allStates_ [i2]);
+            for (std::size_t i3=0; i3<allStates_.size (); ++i3) {
+              const graph::StatePtr_t& s3 (allStates_ [i3]);
+              if (stateInclusion_ (i3, i1) && stateInclusion_ (i3, i2)) {
+                stateIntersection_ (i1, i2) = s3;
+                stateIntersection_ (i2, i1) = s3;
+                hppDout (info, "\"" << s1->name () << "\"");
+                hppDout (info, "inter");
+                hppDout (info, "\"" << s2->name () << "\"");
+                hppDout (info, "=\"" << s3->name () << "\"");
               }
             }
           }
@@ -429,10 +453,10 @@ namespace hpp {
           // s2 is reachable from s1 by traversing a state that is
           if ((depth [next] == 1) ||
               ((depth [next] == 2) &&
-               (stateInclusion_ (reached_by [next]->from ()->id (),
-                                 s1->id ())) &&
-               (stateInclusion_ (reached_by [next]->from ()->id (),
-                                 s2->id ())))) {
+               (stateInclusion_ (index_ [reached_by [next]->from ()],
+                                 index_ [s1])) &&
+               (stateInclusion_ (index_ [reached_by [next]->from ()],
+                                 index_ [s2])))) {
             std::map <graph::StatePtr_t,
                       graph::EdgePtr_t>::const_iterator it
               (reached_by.find (next));
@@ -1025,7 +1049,7 @@ namespace hpp {
       {
         PathPlanner::startSolve ();
         graph_ =manipulationProblem_.constraintGraph ();
-        computeTransitionMap ();
+        initialize ();
         setRhsFreq_=problem().getParameter("RMR*/SetRhsFreq").intValue();
         counter_=0;
 
