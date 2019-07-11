@@ -90,11 +90,7 @@ namespace hpp {
           }
 
 	  /// Return loopEdgeConstraint_
-          const BySubstitution& solver () const
-	  {
-	    assert (state_);
-	    return *solver_;
-	  }
+          const BySubstitution& solver () const;
 
 	  /// Return config_
 	  const Configuration_t& config () const
@@ -116,7 +112,6 @@ namespace hpp {
 	  graph::StatePtr_t state_;
 	  constraints::vector_t rightHandSide_;
           core::ConstraintSetPtr_t constraints_;
-	  BySubstitution* solver_;
 	  Configuration_t config_;
 	  RightHandSides_t rightHandSides_;
 	};

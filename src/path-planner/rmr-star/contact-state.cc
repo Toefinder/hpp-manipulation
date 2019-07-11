@@ -56,8 +56,6 @@ namespace hpp {
         }
         ContactState::ContactState () :
           state_ (), rightHandSide_ (), constraints_ (emptyConstraints ()),
-          solver_ (&const_cast <BySubstitution&>
-                   (constraints_->configProjector ()->solver ())), config_ (),
           rightHandSides_()
         {
         }
@@ -65,21 +63,23 @@ namespace hpp {
         ContactState::ContactState
         (const graph::StatePtr_t& state, ConfigurationIn_t config,
          const core::ConstraintSetPtr_t& constraints) :
-          state_ (state), rightHandSide_ (), constraints_ (constraints),
-          solver_ (&const_cast <BySubstitution&>
-                   (constraints->configProjector ()->solver ())),
+          state_ (state), rightHandSide_ (),
+          constraints_ (HPP_STATIC_PTR_CAST (core::ConstraintSet,
+                                             constraints->copy ())),
           config_(config), rightHandSides_()
         {
+          BySubstitution& solver
+            (const_cast <BySubstitution&> (constraints_->configProjector ()->
+                                           solver ()));
           hppDout (info, pinocchio::displayConfig (config));
           assert (state->contains (config));
-          rightHandSide_ =
-            solver_->rightHandSideFromConfig (config);
-          core::NumericalConstraints_t num = solver_->numericalConstraints();
+          rightHandSide_ = solver.rightHandSideFromConfig (config);
+          core::NumericalConstraints_t num = solver.numericalConstraints();
 
           for (std::size_t i=0 ; i<num.size() ; i++) {
             constraints::ImplicitPtr_t c = num[i];
             constraints::vector_t rhs (c->rightHandSideSize ());
-            bool success (solver_.getRightHandSide(num[i],rhs));
+            bool success (solver.getRightHandSide(num[i],rhs));
             assert (success);
             assert (rightHandSides_.count (c) == 0);
             rightHandSides_.insert
@@ -90,8 +90,8 @@ namespace hpp {
 
         ContactState::ContactState (const ContactState& other) :
           state_ (other.state_), rightHandSide_ (other.rightHandSide_),
-          constraints_ (other.constraints_), solver_ (other.solver_),
-          config_ (other.config_), rightHandSides_ (other.rightHandSides_)
+          constraints_ (other.constraints_), config_ (other.config_),
+          rightHandSides_ (other.rightHandSides_)
         {
         }
 
@@ -101,10 +101,15 @@ namespace hpp {
           state_ = other.state_;
           rightHandSide_ = other.rightHandSide_;
           constraints_ = other.constraints_;
-          solver_ = other.solver_;
           config_ = other.config_;
           rightHandSides_ = other.rightHandSides_;
           return *this;
+        }
+
+        const ContactState::BySubstitution& ContactState::solver () const
+        {
+          assert (state_);
+          return constraints_->configProjector ()->solver ();
         }
 
         ////////////////////////////////////////////////////////////////////////////
