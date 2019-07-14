@@ -62,6 +62,9 @@ namespace hpp {
 	  /// \param state the configuration's state
 	  /// \param config the configuration
 	  /// \param constraints the loop constraint of the state
+          ///
+          /// a pointer to the solver of the input constraints is stored
+          /// and can be accessed in read only mode.
 	  ContactState (const graph::StatePtr_t& state,
 			ConfigurationIn_t config,
 			const core::ConstraintSetPtr_t& constraints);
