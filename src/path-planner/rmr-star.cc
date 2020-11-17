@@ -113,7 +113,7 @@ namespace hpp {
       void RMRStar::initialize ()
       {
         // Build vector of all states and of states with loop
-        size_type minDimension (std::numeric_limits <size_type>::infinity ());
+        size_type minDimension (std::numeric_limits <size_type>::max ());
         const std::size_t nbComp = graph_->nbComponents();
         //create an indexed table with a node as key and the loop edge as value
         for (std::size_t i=0; i<nbComp; ++i) {
@@ -332,7 +332,7 @@ namespace hpp {
             assert (interState);
             bool validConfig = false;
             ConfigurationPtr_t q;
-            // Build solver correponding to the intersection of loop edges
+            // Build solver corresponding to the intersection of loop edges
             // of states.
             BySubstitution solver (transition_ [s1]->pathConstraint ()->
                                    configProjector ()->solver ());
