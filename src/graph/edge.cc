@@ -22,6 +22,7 @@
 #include <hpp/util/exception-factory.hh>
 
 #include <hpp/pinocchio/configuration.hh>
+#include <hpp/core/obstacle-user.hh>
 #include <hpp/core/path-vector.hh>
 #include <hpp/core/path-validation.hh>
 
@@ -40,20 +41,21 @@ namespace hpp {
       Edge::Edge (const std::string& name) :
 	GraphComponent (name), isShort_ (false),
         pathConstraints_ (),
-	configConstraints_ (),
+	targetConstraints_ (),
         steeringMethod_ (),
+        securityMargins_ (),
         pathValidation_ ()
       {}
 
       Edge::~Edge ()
       {}
 
-      StatePtr_t Edge::to () const
+      StatePtr_t Edge::stateTo () const
       {
         return to_.lock();
       }
 
-      StatePtr_t Edge::from () const
+      StatePtr_t Edge::stateFrom () const
       {
         return from_.lock();
       }
@@ -61,7 +63,9 @@ namespace hpp {
       void Edge::relativeMotion(const RelativeMotion::matrix_type & m)
       {
         if(!isInit_) throw std::logic_error("The graph must be initialized before changing the relative motion matrix.");
-        pathValidation_->filterCollisionPairs(m);
+        boost::shared_ptr<core::ObstacleUserInterface> oui =
+          HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+        if (oui) oui->filterCollisionPairs(m);
         relMotion_ = m;
       }
 
@@ -69,10 +73,10 @@ namespace hpp {
       {
         Configuration_t q0 = path->initial (),
                         q1 = path->end ();
-        const bool src_contains_q0 = from()->contains (q0);
-        const bool dst_contains_q0 = to  ()->contains (q0);
-        const bool src_contains_q1 = from()->contains (q1);
-        const bool dst_contains_q1 = to  ()->contains (q1);
+        const bool src_contains_q0 = stateFrom()->contains (q0);
+        const bool dst_contains_q0 = stateTo  ()->contains (q0);
+        const bool src_contains_q1 = stateFrom()->contains (q1);
+        const bool dst_contains_q1 = stateTo  ()->contains (q1);
         // Karnaugh table:
         // 1 = forward, 0 = reverse, ? = I don't know, * = 0 or 1
         // s0s1 \ d0d1 | 00 | 01 | 11 | 10
@@ -80,7 +84,7 @@ namespace hpp {
         // 01          |  ? |  ? |  0 |  0
         // 11          |  ? |  1 |  * |  0
         // 10          |  ? |  1 |  1 |  1
-        // 
+        //
         /// true if reverse
         if (   (!src_contains_q0 && !src_contains_q1)
             || (!dst_contains_q0 && !dst_contains_q1)
@@ -93,18 +97,36 @@ namespace hpp {
         return !(src_contains_q0 && (!src_contains_q1 || dst_contains_q1));
       }
 
+      void Edge::securityMarginForPair
+      (const size_type& row, const size_type& col, const value_type& margin)
+      {
+        if ((row < 0) || (row >= securityMargins_.rows())) {
+          std::ostringstream os;
+          os << "Row index should be between 0 and "
+             << securityMargins_.rows()+1 << ", got " << row << ".";
+          throw std::runtime_error(os.str().c_str());
+        }
+        if ((col < 0) || (col >= securityMargins_.cols())) {
+          std::ostringstream os;
+          os << "Column index should be between 0 and "
+             << securityMargins_.cols()+1 << ", got " << col << ".";
+          throw std::runtime_error(os.str().c_str());
+        }
+        if (securityMargins_(row, col) != margin) {
+          securityMargins_(row, col) = margin;
+          securityMargins_(col, row) = margin;
+          invalidate ();
+        }
+      }
+
       bool Edge::intersectionConstraint (const EdgePtr_t& other,
           ConfigProjectorPtr_t proj) const
       {
         GraphPtr_t g = graph_.lock ();
-        
+
         g->insertNumericalConstraints (proj);
         insertNumericalConstraints (proj);
         state ()->insertNumericalConstraints (proj);
-
-        g->insertLockedJoints (proj);
-        insertLockedJoints (proj);
-        state ()->insertLockedJoints (proj);
 
         if (wkPtr_.lock() == other) // No intersection to be computed.
           return false;
@@ -113,9 +135,6 @@ namespace hpp {
 
         other->insertNumericalConstraints (proj);
         if (!stateB_Eq_stateA) other->state()->insertNumericalConstraints (proj);
-        other->insertLockedJoints (proj);
-        if (!stateB_Eq_stateA) other->state()->insertLockedJoints (proj);
-
         return true;
       }
 
@@ -138,12 +157,18 @@ namespace hpp {
         from_ = from;
         to_ = to;
         state_ = to;
+        // add 1 joint for the environment
+        size_type n (graph.lock()->robot()->nbJoints() + 1);
+        securityMargins_.resize(n, n);
+        securityMargins_.setZero();
       }
 
       void Edge::initialize ()
       {
-        configConstraints_ = buildConfigConstraint ();
-        pathConstraints_ = buildPathConstraint ();
+        if (!isInit_) {
+          targetConstraints_ = buildTargetConstraint ();
+          pathConstraints_ = buildPathConstraint ();
+        }
         isInit_ = true;
       }
 
@@ -163,17 +188,24 @@ namespace hpp {
         populateTooltip (tp);
         da.insertWithQuote ("tooltip", tp.toStr());
         da.insertWithQuote ("labeltooltip", tp.toStr());
-        os << from()->id () << " -> " << to()->id () << " " << da << ";";
+        os << stateFrom()->id() << " -> " << stateTo()->id() << " " << da
+           << ";";
         return os;
+      }
+
+      ConstraintSetPtr_t Edge::targetConstraint() const
+      {
+        throwIfNotInitialized ();
+        return targetConstraints_;
       }
 
       ConstraintSetPtr_t Edge::configConstraint() const
       {
         throwIfNotInitialized ();
-        return configConstraints_;
+        return targetConstraints_;
       }
 
-      // Merge constraints of several graph components into a config projectors
+      // Merge constraints of several graph components into a config projector
       // Replace constraints and complement by combination of both when
       // necessary.
       static void mergeConstraintsIntoConfigProjector
@@ -241,26 +273,29 @@ namespace hpp {
 
       ConstraintSetPtr_t Edge::buildConfigConstraint()
       {
+        return buildTargetConstraint();
+      }
+
+      ConstraintSetPtr_t Edge::buildTargetConstraint()
+      {
         std::string n = "(" + name () + ")";
         GraphPtr_t g = graph_.lock ();
 
         ConstraintSetPtr_t constraint = ConstraintSet::create (g->robot (), "Set " + n);
 
         ConfigProjectorPtr_t proj = ConfigProjector::create(g->robot(), "proj_" + n, g->errorThreshold(), g->maxIterations());
-        g->insertLockedJoints (proj);
-        insertLockedJoints (proj);
-        to ()->insertLockedJoints (proj);
-	if (state () != to ()) {
-	  state ()->insertLockedJoints (proj);
-	}
-
         std::vector <GraphComponentPtr_t> components;
         components.push_back (g);
         components.push_back (wkPtr_.lock ());
-        components.push_back (to ());
-	if (state () != to ()) {
+        components.push_back (stateTo ());
+	if (state () != stateTo ()) {
           components.push_back (state ());
 	}
+        // Copy constraints from
+        // - graph,
+        // - this edge,
+        // - the destination state,
+        // - the state in which the transition lies if different
         mergeConstraintsIntoConfigProjector (proj, components, parentGraph ());
 
         constraint->addConstraint (proj);
@@ -282,10 +317,6 @@ namespace hpp {
         ConstraintSetPtr_t constraint = ConstraintSet::create (g->robot (), "Set " + n);
 
         ConfigProjectorPtr_t proj = ConfigProjector::create(g->robot(), "proj_" + n, g->errorThreshold(), g->maxIterations());
-        g->insertLockedJoints (proj);
-        insertLockedJoints (proj);
-        state ()->insertLockedJoints (proj);
-
         std::vector <GraphComponentPtr_t> components;
         components.push_back (g);
         components.push_back (wkPtr_.lock ());
@@ -297,15 +328,20 @@ namespace hpp {
 
         // Build steering method
         const ProblemPtr_t& problem (g->problem());
-        steeringMethod_ = problem->steeringMethod()->innerSteeringMethod()->copy();
+        steeringMethod_ = problem->manipulationSteeringMethod()->innerSteeringMethod()->copy();
         steeringMethod_->constraints (constraint);
         // Build path validation and relative motion matrix
         // TODO this path validation will not contain obstacles added after
         // its creation.
         pathValidation_ = problem->pathValidationFactory ();
-        relMotion_ = RelativeMotion::matrix (g->robot());
-        RelativeMotion::fromConstraint (relMotion_, g->robot(), constraint);
-        pathValidation_->filterCollisionPairs (relMotion_);
+        boost::shared_ptr<core::ObstacleUserInterface> oui =
+          HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+        if (oui) {
+          relMotion_ = RelativeMotion::matrix (g->robot());
+          RelativeMotion::fromConstraint (relMotion_, g->robot(), constraint);
+          oui->filterCollisionPairs (relMotion_);
+          oui->setSecurityMargins(securityMargins_);
+        }
         return constraint;
       }
 
@@ -353,18 +389,31 @@ namespace hpp {
 	}
       }
 
-      bool Edge::applyConstraints (core::NodePtr_t nnear, ConfigurationOut_t q) const
+      bool Edge::applyConstraints (core::NodePtr_t nStart,
+                                   ConfigurationOut_t q) const
       {
-        return applyConstraints (*(nnear->configuration ()), q);
+        return generateTargetConfig (*(nStart->configuration ()), q);
       }
 
       bool Edge::applyConstraints (ConfigurationIn_t qoffset,
 				   ConfigurationOut_t q) const
       {
-        ConstraintSetPtr_t c = configConstraint ();
+        return generateTargetConfig(qoffset, q);
+      }
+
+      bool Edge::generateTargetConfig (core::NodePtr_t nStart,
+                                       ConfigurationOut_t q) const
+      {
+        return generateTargetConfig (*(nStart->configuration ()), q);
+      }
+
+      bool Edge::generateTargetConfig (ConfigurationIn_t qStart,
+                                       ConfigurationOut_t q) const
+      {
+        ConstraintSetPtr_t c = targetConstraint();
         ConfigProjectorPtr_t proj = c->configProjector ();
-        proj->rightHandSideFromConfig (qoffset);
-        if (isShort_) q = qoffset;
+        proj->rightHandSideFromConfig (qStart);
+        if (isShort_) q = qStart;
         if (c->apply (q)) return true;
 	const ::hpp::statistics::SuccessStatistics& ss = proj->statistics ();
 	if (ss.nbFailure () > ss.nbSuccess ()) {
@@ -398,6 +447,22 @@ namespace hpp {
         wkPtr_ = weak;
       }
 
+      void WaypointEdge::initialize ()
+      {
+        Edge::initialize();
+        // Set error threshold of internal edge to error threshold of
+        // waypoint edge divided by number of edges.
+        assert(targetConstraint()->configProjector());
+        value_type eps(targetConstraint()->configProjector()
+                       ->errorThreshold()/(value_type)edges_.size());
+        for(Edges_t::iterator it(edges_.begin()); it != edges_.end(); ++it){
+          (*it)->initialize();
+          assert ((*it)->targetConstraint());
+          assert ((*it)->targetConstraint()->configProjector());
+          (*it)->targetConstraint()->configProjector()->errorThreshold(eps);
+        }
+      }
+
       bool WaypointEdge::canConnect (ConfigurationIn_t q1, ConfigurationIn_t q2) const
       {
         /// TODO: This is not correct
@@ -413,7 +478,7 @@ namespace hpp {
         core::PathVectorPtr_t pv = core::PathVector::create
           (graph_.lock ()->robot ()->configSize (),
            graph_.lock ()->robot ()->numberDof ());
-        // Many times, this will be called rigth after WaypointEdge::applyConstraints so config_
+        // Many times, this will be called rigth after WaypointEdge::generateTargetConfig so config_
         // already satisfies the constraints.
         size_type n = edges_.size();
         assert (configs_.cols() == n + 1);
@@ -425,17 +490,17 @@ namespace hpp {
 
         for (size_type i = 0; i < n; ++i) {
           if (i < (n-1) && !useCache) configs_.col (i+1) = q2;
-          if (i < (n-1) && !edges_[i]->applyConstraints (configs_.col(i), configs_.col (i+1))) {
-            hppDout (info, "Waypoint edge " << name() << ": applyConstraints failed at waypoint " << i << "."
+          if (i < (n-1) && !edges_[i]->generateTargetConfig (configs_.col(i), configs_.col (i+1))) {
+            hppDout (info, "Waypoint edge " << name() << ": generateTargetConfig failed at waypoint " << i << "."
                 << "\nUse cache: " << useCache
                 );
             lastSucceeded_ = false;
             return false;
           }
-          assert (configConstraint ());
-          assert (configConstraint ()->configProjector ());
+          assert (targetConstraint());
+          assert (targetConstraint()->configProjector ());
           value_type eps
-            (configConstraint ()->configProjector ()->errorThreshold ());
+            (targetConstraint()->configProjector ()->errorThreshold ());
           if ((configs_.col(i) - configs_.col (i+1)).squaredNorm () > eps*eps) {
             if (!edges_[i]->build (p, configs_.col(i), configs_.col (i+1))) {
               hppDout (info, "Waypoint edge " << name()
@@ -453,13 +518,20 @@ namespace hpp {
         return true;
       }
 
-      bool WaypointEdge::applyConstraints (ConfigurationIn_t qoffset, ConfigurationOut_t q) const
+      bool WaypointEdge::applyConstraints (ConfigurationIn_t qStart,
+                                           ConfigurationOut_t q) const
+      {
+        return generateTargetConfig(qStart,q);
+      }
+
+      bool WaypointEdge::generateTargetConfig (ConfigurationIn_t qStart,
+                                               ConfigurationOut_t q) const
       {
         assert (configs_.cols() == size_type(edges_.size() + 1));
-        configs_.col(0) = qoffset;
+        configs_.col(0) = qStart;
         for (std::size_t i = 0; i < edges_.size (); ++i) {
           configs_.col (i+1) = q;
-          if (!edges_[i]->applyConstraints (configs_.col(i), configs_.col (i+1))) {
+          if (!edges_[i]->generateTargetConfig (configs_.col(i), configs_.col (i+1))) {
             q = configs_.col(i+1);
             lastSucceeded_ = false;
             return false;
@@ -474,9 +546,10 @@ namespace hpp {
       {
         edges_.resize (number + 1);
         states_.resize (number + 1);
-        states_.back() = to();
+        states_.back() = stateTo();
         const size_type nbDof = graph_.lock ()->robot ()->configSize ();
         configs_ = matrix_t (nbDof, number + 2);
+        invalidate();
       }
 
       void WaypointEdge::setWaypoint (const std::size_t index,
@@ -486,7 +559,7 @@ namespace hpp {
         assert (edges_.size() == states_.size());
         assert (index < edges_.size());
         if (index == states_.size() - 1) {
-          assert (!wTo || wTo == to());
+          assert (!wTo || wTo == stateTo());
         } else {
           states_[index] = wTo;
         }
@@ -495,7 +568,7 @@ namespace hpp {
 
       const EdgePtr_t& WaypointEdge::waypoint (const std::size_t index) const
       {
-        assert (index < edges_.size()); 
+        assert (index < edges_.size());
         return edges_[index];
       }
 
@@ -503,7 +576,7 @@ namespace hpp {
       {
         os << "|   |   |-- ";
         GraphComponent::print (os)
-          << " (waypoint) --> " << to ()->name ();
+          << " (waypoint) --> " << stateTo ()->name ();
         return os;
       }
 
@@ -529,7 +602,7 @@ namespace hpp {
       {
         os << "|   |   |-- ";
         GraphComponent::print (os)
-          << " (level set) --> " << to ()->name ();
+          << " (level set) --> " << stateTo ()->name ();
         return os;
       }
 
@@ -549,22 +622,21 @@ namespace hpp {
             it != condNumericalConstraints_.end (); ++it) {
           tp.addLine ("- " + (*it)->function ().name ());
         }
-        for (LockedJoints_t::const_iterator it = condLockedJoints_.begin ();
-            it != condLockedJoints_.end (); ++it) {
-          tp.addLine ("- " + (*it)->jointName ());
-        }
         tp.addLine ("Foliation parametrization constraints:");
         for (NumericalConstraints_t::const_iterator it = paramNumericalConstraints_.begin ();
             it != paramNumericalConstraints_.end (); ++it) {
           tp.addLine ("- " + (*it)->function ().name ());
         }
-        for (LockedJoints_t::const_iterator it = paramLockedJoints_.begin ();
-            it != paramLockedJoints_.end (); ++it) {
-          tp.addLine ("- " + (*it)->jointName ());
-        }
       }
 
-      bool LevelSetEdge::applyConstraints (ConfigurationIn_t qoffset, ConfigurationOut_t q) const
+      bool LevelSetEdge::applyConstraints(ConfigurationIn_t qStart,
+                                          ConfigurationOut_t q) const
+      {
+        return generateTargetConfig(qStart, q);
+      }
+
+      bool LevelSetEdge::generateTargetConfig(ConfigurationIn_t qStart,
+                                              ConfigurationOut_t q) const
       {
         // First, get an offset from the histogram
         statistics::DiscreteDistribution < RoadmapNodePtr_t > distrib = hist_->getDistrib ();
@@ -572,46 +644,53 @@ namespace hpp {
           hppDout (warning, "Edge " << name() << ": Distrib is empty");
           return false;
         }
-        const Configuration_t& qlevelset = *(distrib ()->configuration ());
+        const Configuration_t& qLeaf = *(distrib ()->configuration ());
 
-        return applyConstraintsWithOffset (qoffset, qlevelset, q);
+        return generateTargetConfigOnLeaf (qStart, qLeaf, q);
       }
 
-      bool LevelSetEdge::applyConstraints (core::NodePtr_t n_offset, ConfigurationOut_t q) const
+      bool LevelSetEdge::applyConstraints(core::NodePtr_t nStart,
+                                          ConfigurationOut_t q) const
       {
-        // First, get an offset from the histogram that is not in the same connected component.
-        statistics::DiscreteDistribution < RoadmapNodePtr_t > distrib = hist_->getDistribOutOfConnectedComponent (n_offset->connectedComponent ());
+        return generateTargetConfig(nStart, q);
+      }
+
+      bool LevelSetEdge::generateTargetConfig(core::NodePtr_t nStart,
+                                              ConfigurationOut_t q) const
+      {
+      // First, get an offset from the histogram that is not in the same connected component.
+        statistics::DiscreteDistribution < RoadmapNodePtr_t > distrib = hist_->getDistribOutOfConnectedComponent (nStart->connectedComponent ());
         if (distrib.size () == 0) {
           hppDout (warning, "Edge " << name() << ": Distrib is empty");
           return false;
         }
-        const Configuration_t& qlevelset = *(distrib ()->configuration ()),
-                               qoffset = *(n_offset->configuration ());
+        const Configuration_t& qLeaf = *(distrib ()->configuration ()),
+                               qStart = *(nStart->configuration ());
 
-        return applyConstraintsWithOffset (qoffset, qlevelset, q);
+        return generateTargetConfigOnLeaf (qStart, qLeaf, q);
       }
 
-      bool LevelSetEdge::applyConstraintsWithOffset (ConfigurationIn_t qoffset,
-          ConfigurationIn_t qlevelset, ConfigurationOut_t q) const
+      bool LevelSetEdge::generateTargetConfigOnLeaf(ConfigurationIn_t qStart,
+                                                    ConfigurationIn_t qLeaf,
+                                                    ConfigurationOut_t q) const
       {
         // First, set the offset.
-        ConstraintSetPtr_t cs = configConstraint ();
+        ConstraintSetPtr_t cs = targetConstraint();
         const ConfigProjectorPtr_t cp = cs->configProjector ();
         assert (cp);
 
-	cp->rightHandSideFromConfig (qoffset);
+        // Set right hand side of edge constraints with qStart
+	cp->rightHandSideFromConfig (qStart);
+        // Set right hand side of constraints parameterizing the target state
+        // foliation with qLeaf.
 	for (NumericalConstraints_t::const_iterator it =
 	       paramNumericalConstraints_.begin ();
 	     it != paramNumericalConstraints_.end (); ++it) {
-          cp->rightHandSideFromConfig (*it, qlevelset);
-        }
-        for (LockedJoints_t::const_iterator it = paramLockedJoints_.begin ();
-	     it != paramLockedJoints_.end (); ++it) {
-          cp->rightHandSideFromConfig (*it, qlevelset);
+          cp->rightHandSideFromConfig (*it, qLeaf);
         }
 
         // Eventually, do the projection.
-        if (isShort_) q = qoffset;
+        if (isShort_) q = qStart;
         if (cs->apply (q)) return true;
 	::hpp::statistics::SuccessStatistics& ss = cp->statistics ();
 	if (ss.nbFailure () > ss.nbSuccess ()) {
@@ -662,11 +741,6 @@ namespace hpp {
 
         ConfigProjectorPtr_t proj = ConfigProjector::create(g->robot(), "projParam_" + n, g->errorThreshold(), g->maxIterations());
 
-        for (LockedJoints_t::const_iterator it = paramLockedJoints_.begin ();
-            it != paramLockedJoints_.end (); ++it) {
-          proj->add (*it);
-        }
-
         IntervalsContainer_t::const_iterator itpdof = paramPassiveDofs_.begin ();
         for (NumericalConstraints_t::const_iterator it = paramNumericalConstraints_.begin ();
             it != paramNumericalConstraints_.end (); ++it) {
@@ -688,11 +762,6 @@ namespace hpp {
         // edge.
         ConstraintSetPtr_t cond = ConstraintSet::create (g->robot (), "Set " + n);
         proj = ConfigProjector::create(g->robot(), "projCond_" + n, g->errorThreshold(), g->maxIterations());
-
-        for (LockedJoints_t::const_iterator it = condLockedJoints_.begin ();
-            it != condLockedJoints_.end (); ++it) {
-          proj->add (*it);
-        }
 
         itpdof = condPassiveDofs_.begin ();
         for (NumericalConstraints_t::const_iterator it = condNumericalConstraints_.begin ();
@@ -719,11 +788,18 @@ namespace hpp {
 
       void LevelSetEdge::initialize ()
       {
-        Edge::initialize();
-        buildHistogram ();
+        if (!isInit_) {
+          Edge::initialize();
+          buildHistogram ();
+        }
       }
 
       ConstraintSetPtr_t LevelSetEdge::buildConfigConstraint()
+      {
+        return buildTargetConstraint();
+      }
+
+      ConstraintSetPtr_t LevelSetEdge::buildTargetConstraint()
       {
         std::string n = "(" + name () + ")";
         GraphPtr_t g = graph_.lock ();
@@ -732,16 +808,12 @@ namespace hpp {
 
         ConfigProjectorPtr_t proj = ConfigProjector::create(g->robot(), "proj_" + n, g->errorThreshold(), g->maxIterations());
 
-        g->insertLockedJoints (proj);
-        for (LockedJoints_t::const_iterator it = paramLockedJoints_.begin ();
-            it != paramLockedJoints_.end (); ++it) {
-          proj->add (*it);
-        }
-        insertLockedJoints (proj);
-        to ()->insertLockedJoints (proj);
-        if (state () != to ()) {
-	  state ()->insertLockedJoints (proj);
-	}
+        // Copy constraints from
+        // - graph,
+        // - param numerical constraints
+        // - this edge,
+        // - the destination state,
+        // - the state in which the transition lies if different
 
         g->insertNumericalConstraints (proj);
         IntervalsContainer_t::const_iterator itpdof = paramPassiveDofs_.begin ();
@@ -753,8 +825,8 @@ namespace hpp {
         assert (itpdof == paramPassiveDofs_.end ());
 
         insertNumericalConstraints (proj);
-        to ()->insertNumericalConstraints (proj);
-        if (state () != to ()) {
+        stateTo ()->insertNumericalConstraints (proj);
+        if (state () != stateTo ()) {
 	  state ()->insertNumericalConstraints (proj);
 	}
         constraint->addConstraint (proj);
@@ -767,36 +839,28 @@ namespace hpp {
       (const constraints::ImplicitPtr_t& nm,
               const segments_t& passiveDofs)
       {
-        isInit_ = false;
+        invalidate ();
         paramNumericalConstraints_.push_back (nm);
         paramPassiveDofs_.push_back (passiveDofs);
       }
 
-      void LevelSetEdge::insertParamConstraint (const DifferentiableFunctionPtr_t function, const ComparisonTypes_t ineq)
+      const NumericalConstraints_t& LevelSetEdge::paramConstraints() const
       {
-        isInit_ = false;
-        insertParamConstraint (constraints::Implicit::create (function, ineq));
-      }
-
-      void LevelSetEdge::insertParamConstraint (const LockedJointPtr_t lockedJoint)
-      {
-        isInit_ = false;
-        paramLockedJoints_.push_back (lockedJoint);
+        return paramNumericalConstraints_;
       }
 
       void LevelSetEdge::insertConditionConstraint
       (const constraints::ImplicitPtr_t& nm,
               const segments_t& passiveDofs)
       {
-        isInit_ = false;
+        invalidate ();
         condNumericalConstraints_.push_back (nm);
         condPassiveDofs_.push_back (passiveDofs);
       }
 
-      void LevelSetEdge::insertConditionConstraint (const LockedJointPtr_t lockedJoint)
+      const NumericalConstraints_t& LevelSetEdge::conditionConstraints() const
       {
-        isInit_ = false;
-        condLockedJoints_.push_back (lockedJoint);
+        return condNumericalConstraints_;
       }
 
       LevelSetEdge::LevelSetEdge

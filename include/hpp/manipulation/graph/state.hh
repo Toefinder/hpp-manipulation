@@ -24,7 +24,6 @@
 #include <hpp/constraints/implicit.hh>
 
 #include "hpp/manipulation/config.hh"
-#include "hpp/manipulation/deprecated.hh"
 #include "hpp/manipulation/fwd.hh"
 #include "hpp/manipulation/graph/fwd.hh"
 #include "hpp/manipulation/graph/edge.hh"
@@ -114,8 +113,10 @@ namespace hpp {
             return hiddenNeighbors_;
           }
 
+          /// Set weight of edge starting from this state.
           void updateWeight (const EdgePtr_t&edge, const Weight_t& w);
 
+          /// Get weight of edge starting from this state.
           Weight_t getWeight (const EdgePtr_t&edge);
 
           /// Constraint to project onto this state.
@@ -129,18 +130,9 @@ namespace hpp {
           virtual void addNumericalConstraintForPath (const ImplicitPtr_t& nm,
               const segments_t& passiveDofs = segments_t ())
           {
-            isInit_ = false;
+            invalidate();
             numericalConstraintsForPath_.push_back (nm);
             passiveDofsForPath_.push_back (passiveDofs);
-          }
-
-          /// Add core::DifferentiableFunction to the component.
-          virtual void addNumericalConstraintForPath (const DifferentiableFunctionPtr_t& function, const ComparisonTypes_t& ineq)
-            HPP_MANIPULATION_DEPRECATED
-          {
-            isInit_ = false;
-            numericalConstraintsForPath_.push_back
-              (Implicit::create (function,ineq));
           }
 
           /// Insert the numerical constraints in a ConfigProjector

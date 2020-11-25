@@ -48,40 +48,39 @@ namespace hpp {
 
       void GraphComponent::setDirty()
       {
-        isInit_ = false;
+        invalidate();
       }
 
       void GraphComponent::addNumericalConstraint (const ImplicitPtr_t& nm,
           const segments_t& passiveDofs)
       {
-        isInit_ = false;
+        invalidate();
         numericalConstraints_.push_back(nm);
         passiveDofs_.push_back (passiveDofs);
       }
 
-      void GraphComponent::addNumericalConstraint (const DifferentiableFunctionPtr_t& function, const ComparisonTypes_t& ineq)
+      void GraphComponent::addNumericalCost (const ImplicitPtr_t& cost)
       {
-        addNumericalConstraint (Implicit::create (function,ineq));
+        invalidate();
+        numericalCosts_.push_back(cost);
       }
 
       void GraphComponent::resetNumericalConstraints ()
       {
-        isInit_ = false;
+        invalidate();
 	numericalConstraints_.clear();
         passiveDofs_.clear();
+        numericalCosts_.clear();
       }
 
       void GraphComponent::addLockedJointConstraint
       (const LockedJointPtr_t& constraint)
       {
-        isInit_ = false;
-        lockedJoints_.push_back (constraint);
+        addNumericalConstraint (constraint);
       }
 
       void GraphComponent::resetLockedJoints ()
       {
-        isInit_ = false;
-	lockedJoints_.clear();
       }
 
       bool GraphComponent::insertNumericalConstraints (ConfigProjectorPtr_t& proj) const
@@ -93,20 +92,21 @@ namespace hpp {
           ++itpdof;
         }
         assert (itpdof == passiveDofs_.end ());
+        for (NumericalConstraints_t::const_iterator it = numericalCosts_.begin();
+            it != numericalCosts_.end(); ++it) {
+          proj->add (*it, 1);
+        }
         return !numericalConstraints_.empty ();
-      }
-
-      bool GraphComponent::insertLockedJoints (ConfigProjectorPtr_t& cp) const
-      {
-        for (LockedJoints_t::const_iterator it = lockedJoints_.begin();
-            it != lockedJoints_.end(); ++it)
-          cp->add (*it);
-        return !lockedJoints_.empty ();
       }
 
       const NumericalConstraints_t& GraphComponent::numericalConstraints() const
       {
         return numericalConstraints_;
+      }
+
+      const NumericalConstraints_t& GraphComponent::numericalCosts() const
+      {
+        return numericalCosts_;
       }
 
       const std::vector <segments_t>& GraphComponent::passiveDofs() const
@@ -140,7 +140,10 @@ namespace hpp {
 
       void GraphComponent::throwIfNotInitialized () const
       {
-        if (!isInit_ || (graph_.lock() && !graph_.lock()->isInit_)) throw std::logic_error ("The graph should have been initialized first.");
+        if (!isInit_){
+          throw std::logic_error
+            ("The graph should have been initialized first.");
+        }
       }
 
       std::ostream& operator<< (std::ostream& os,
@@ -154,10 +157,6 @@ namespace hpp {
         for (NumericalConstraints_t::const_iterator it = numericalConstraints_.begin ();
             it != numericalConstraints_.end (); ++it) {
           tp.addLine ("- " + (*it)->function ().name ());
-        }
-        for (LockedJoints_t::const_iterator it = lockedJoints_.begin ();
-            it != lockedJoints_.end (); ++it) {
-          tp.addLine ("- " + (*it)->jointName ());
         }
       }
     } // namespace graph

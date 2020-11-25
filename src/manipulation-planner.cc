@@ -55,7 +55,7 @@ namespace hpp {
       HPP_DEFINE_TIMECOUNTER(tryConnectToRoadmap);
       /// extend steps
       HPP_DEFINE_TIMECOUNTER(chooseEdge);
-      HPP_DEFINE_TIMECOUNTER(applyConstraints);
+      HPP_DEFINE_TIMECOUNTER(generateTargetConfig);
       HPP_DEFINE_TIMECOUNTER(buildPath);
       HPP_DEFINE_TIMECOUNTER(projectPath);
       HPP_DEFINE_TIMECOUNTER(validatePath);
@@ -71,7 +71,8 @@ namespace hpp {
           const Configuration_t& q1, const Configuration_t& q2,
           const graph::StatePtr_t& s1, const graph::StatePtr_t& s2,
           const graph::GraphPtr_t& graph,
-          const PathProjectorPtr_t& pathProjector)
+          const PathProjectorPtr_t& pathProjector,
+          const PathValidationPtr_t& pathValidation)
       {
         assert (graph && s1 && s2);
         graph::Edges_t possibleEdges = graph->getEdges (s1, s2);
@@ -91,7 +92,7 @@ namespace hpp {
         }
 
         PathValidationReportPtr_t report;
-        if (edge->pathValidation()->validate (path, false, tmpPath, report))
+        if (pathValidation->validate (path, false, tmpPath, report))
           return path;
         return core::PathPtr_t();
       }
@@ -240,7 +241,7 @@ namespace hpp {
       HPP_DISPLAY_TIMECOUNTER(nearestNeighbor);
       HPP_DISPLAY_TIMECOUNTER(delayedEdges);
       HPP_DISPLAY_TIMECOUNTER(chooseEdge);
-      HPP_DISPLAY_TIMECOUNTER(applyConstraints);
+      HPP_DISPLAY_TIMECOUNTER(generateTargetConfig);
       HPP_DISPLAY_TIMECOUNTER(buildPath);
       HPP_DISPLAY_TIMECOUNTER(projectPath);
       HPP_DISPLAY_TIMECOUNTER(validatePath);
@@ -264,10 +265,10 @@ namespace hpp {
         return false;
       }
       qProj_ = *q_rand;
-      HPP_START_TIMECOUNTER (applyConstraints);
+      HPP_START_TIMECOUNTER (generateTargetConfig);
       SuccessStatistics& es = edgeStat (edge);
-      if (!edge->applyConstraints (n_near, qProj_)) {
-        HPP_STOP_TIMECOUNTER (applyConstraints);
+      if (!edge->generateTargetConfig(n_near, qProj_)) {
+        HPP_STOP_TIMECOUNTER (generateTargetConfig);
         es.addFailure (reasons_[FAILURE]);
         es.addFailure (reasons_[PROJECTION]);
         return false;
@@ -277,7 +278,7 @@ namespace hpp {
 	es.addFailure (reasons_[PATH_PROJECTION_ZERO]);
 	return false;
       }
-      HPP_STOP_TIMECOUNTER (applyConstraints);
+      HPP_STOP_TIMECOUNTER (generateTargetConfig);
       core::PathPtr_t path;
       HPP_START_TIMECOUNTER (buildPath);
       if (!edge->build (path, *q_near, qProj_)) {
@@ -302,7 +303,7 @@ namespace hpp {
         }
         HPP_STOP_TIMECOUNTER (projectPath);
       } else projPath = path;
-      PathValidationPtr_t pathValidation (edge->pathValidation ());
+      PathValidationPtr_t pathValidation (problem_.pathValidation ());
       PathValidationReportPtr_t report;
       core::PathPtr_t fullValidPath;
       HPP_START_TIMECOUNTER (validatePath);
@@ -397,16 +398,13 @@ namespace hpp {
               itn2 != knearest.end (); ++itn2) {
             bool _1to2 = (*itn1)->isOutNeighbor (*itn2);
             bool _2to1 = (*itn1)->isInNeighbor (*itn2);
-            if (_1to2 && _2to1) {
-              hppDout (info, "the two nodes are already connected");
-              continue;
-            }
+            assert (!_1to2 || !_2to1);
 
             const Configuration_t& q2 (*(*itn2)->configuration ());
             graph::StatePtr_t s2 = getState (graph, *itn2);
             assert (q1 != q2);
 
-            path = connect (q1, q2, s1, s2, graph, pathProjector);
+            path = connect (q1, q2, s1, s2, graph, pathProjector, problem_.pathValidation());
 
             if (path) {
               nbConnection++;
@@ -444,15 +442,12 @@ namespace hpp {
             continue;
           bool _1to2 = (*itn1)->isOutNeighbor (*itn2);
           bool _2to1 = (*itn1)->isInNeighbor (*itn2);
-          if (_1to2 && _2to1) {
-            hppDout (info, "the two nodes are already connected");
-            continue;
-          }
+          assert (!_1to2 || !_2to1);
           const Configuration_t& q2 (*(*itn2)->configuration ());
           graph::StatePtr_t s2 = getState (graph, *itn2);
           assert (q1 != q2);
 
-          path = connect (q1, q2, s1, s2, graph, pathProjector);
+          path = connect (q1, q2, s1, s2, graph, pathProjector, problem_.pathValidation());
           if (path) {
             nbConnection++;
             if (!_1to2) roadmap ()->addEdge (*itn1, *itn2, path);

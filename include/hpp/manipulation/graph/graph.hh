@@ -53,19 +53,7 @@ namespace hpp {
 				   const ProblemPtr_t& problem);
 
           /// Create and insert a state selector inside the graph.
-	  /// \deprecated use createStateSelector instead
-          StateSelectorPtr_t createNodeSelector (const std::string& name)
-	    HPP_MANIPULATION_DEPRECATED;
-
-          /// Create and insert a state selector inside the graph.
           StateSelectorPtr_t createStateSelector (const std::string& name);
-
-          /// Set the state selector
-          /// \warning This should be done before adding nodes to the node
-          /// selector otherwise the pointer to the parent graph will NOT be
-          /// valid.
-	  /// \deprecated use stateSelector instead
-          void nodeSelector (StateSelectorPtr_t ns) HPP_MANIPULATION_DEPRECATED;
 
           /// Set the state selector
           /// \warning This should be done before adding nodes to the node
@@ -74,29 +62,13 @@ namespace hpp {
           void stateSelector (StateSelectorPtr_t ns);
 
           /// Get the state selector
-	  /// \deprecated use stateSelector instead
-          StateSelectorPtr_t nodeSelector () const HPP_MANIPULATION_DEPRECATED
-          {
-            return stateSelector_;
-          }
-
-          /// Get the state selector
           StateSelectorPtr_t stateSelector () const
           {
             return stateSelector_;
           }
 
-          /// Returns the states of a configuration.
-	  /// \deprecated use getState instead
-          StatePtr_t getNode (ConfigurationIn_t config) const
-	    HPP_MANIPULATION_DEPRECATED;
-
           /// Returns the state of a configuration.
           StatePtr_t getState (ConfigurationIn_t config) const;
-
-          /// Returns the state of a roadmap node
-	  /// \deprecated use getState instead
-          StatePtr_t getNode(RoadmapNodePtr_t node) const;
 
           /// Returns the state of a roadmap node
           StatePtr_t getState (RoadmapNodePtr_t node) const;
@@ -139,29 +111,29 @@ namespace hpp {
                              const ImplicitPtr_t& complement,
                              ImplicitPtr_t& combinationOfBoth) const;
 
+          /// Return the vector of tuples as registered in registerConstraints
+          /// \return a vector of tuples (c, c/complement, c/both) each of them
+          ///         corresponding to a constraint, the complement constraint
+          ///         and the combination of boths.
+          const ConstraintsAndComplements_t& constraintsAndComplements () const;
+
           /// Constraint to project onto the Node.
           /// \param state the state on which to project.
           /// \return The initialized projector.
           ConstraintSetPtr_t configConstraint (const StatePtr_t& state) const;
 
-          /// Constraint to project onto the same leaf as config.
-          /// \param edges a list of edges defining the foliation.
-          /// \return The constraint.
-          ConstraintSetPtr_t configConstraint (const EdgePtr_t& edge) const;
+          /// Constraints of path and target state of an edge
+          /// \deprecated Use tagetConstraint instead.
+          ConstraintSetPtr_t configConstraint (const EdgePtr_t& edge) const
+            HPP_MANIPULATION_DEPRECATED;
 
-	  /// Get error of a config with respect to a state constraint
-	  ///
-	  /// \param config Configuration,
-	  /// \param state state containing the constraint to check config against
-	  /// \retval error the error of the state constraint for the
-	  ///         configuration
-	  /// \return whether the configuration belongs to the state.
-	  /// Call method core::ConstraintSet::isSatisfied for the state
-	  /// constraints.
-	  /// \deprecated use getConfigErrorForState instead
-	  bool getConfigErrorForNode (ConfigurationIn_t config,
-				      const StatePtr_t& state, vector_t& error) const
-	    HPP_MANIPULATION_DEPRECATED;
+          /// Constraints a configuration in target state should satisfy
+          /// \param edge a transition
+          /// \return The set of constraints a configuration lying in the
+          ///         target state of the edge should satisfy. This set
+          ///         includes the paths constraints of the edge.
+          /// \sa Edge::targetConstraint.
+          ConstraintSetPtr_t targetConstraint (const EdgePtr_t& edge) const;
 
 	  /// Get error of a config with respect to a state constraint
 	  ///
@@ -266,7 +238,11 @@ namespace hpp {
           /// Print the component in DOT language.
           virtual std::ostream& dotPrint (std::ostream& os, dot::DrawingAttributes da = dot::DrawingAttributes ()) const;
 
+          /// Initialize all components of the graph (edges and states)
           virtual void initialize ();
+
+          /// Invalidate all states and edges of the graph
+          virtual void invalidate();
 
         protected:
           /// Initialization of the object.
@@ -274,9 +250,7 @@ namespace hpp {
 
           /// Constructor
 	  /// \param sm a steering method to create paths from edges
-          Graph (const std::string& name, const ProblemPtr_t& problem) :
-	    GraphComponent (name), problem_ (problem)
-          {}
+          Graph (const std::string& name, const ProblemPtr_t& problem);
 
           /// Print the object in a stream.
           std::ostream& print (std::ostream& os) const;

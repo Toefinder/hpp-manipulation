@@ -25,6 +25,7 @@
 #include <hpp/pinocchio/gripper.hh>
 
 #include <hpp/constraints/convex-shape-contact.hh>
+#include <hpp/constraints/explicit/convex-shape-contact.hh>
 
 #include <hpp/core/path-optimization/random-shortcut.hh>
 #include <hpp/core/path-optimization/partial-shortcut.hh>
@@ -58,6 +59,7 @@
 #include "hpp/manipulation/graph-node-optimizer.hh"
 #include "hpp/manipulation/path-optimization/random-shortcut.hh"
 #include "hpp/manipulation/path-optimization/enforce-transition-semantic.hh"
+#include "hpp/manipulation/path-planner/end-effector-trajectory.hh"
 #include "hpp/manipulation/problem-target/state.hh"
 #include "hpp/manipulation/steering-method/cross-state-optimization.hh"
 #include "hpp/manipulation/steering-method/graph.hh"
@@ -123,6 +125,7 @@ namespace hpp {
 
       pathPlanners.add ("M-RRT", ManipulationPlanner::create);
       pathPlanners.add ("RMR*", pathPlanner::RMRStar::create);
+      pathPlanners.add ("EndEffectorTrajectory", pathPlanner::EndEffectorTrajectory::createWithRoadmap);
 
       pathValidations.add ("Graph-Discretized"                      , createDiscretizedCollisionGraphPathValidation);
       pathValidations.add ("Graph-DiscretizedCollision"             , createDiscretizedCollisionGraphPathValidation);
@@ -243,26 +246,13 @@ namespace hpp {
      const StringList_t& surface2, const value_type& margin)
     {
       if (!robot_) throw std::runtime_error ("No robot loaded");
-      using constraints::ConvexShape;
-      using constraints::ConvexShapeContactPtr_t;
-      using constraints::ConvexShapeContactComplement;
-      using constraints::ConvexShapeContactComplementPtr_t;
-      std::string complementName (name + "/complement");
-      std::pair < ConvexShapeContactPtr_t,
-		  ConvexShapeContactComplementPtr_t > constraints
-	(ConvexShapeContactComplement::createPair
-	 (name, complementName, robot_));
-
-      JointAndShapes_t l;
+      JointAndShapes_t floorSurfaces, objectSurfaces, l;
       for (StringList_t::const_iterator it1 = surface1.begin ();
           it1 != surface1.end(); ++it1) {
         if (!robot_->jointAndShapes.has (*it1))
           throw std::runtime_error ("First list of triangles not found.");
         l = robot_->jointAndShapes.get (*it1);
-        for (JointAndShapes_t::const_iterator it = l.begin ();
-            it != l.end(); ++it) {
-          constraints.first->addObject (ConvexShape (it->second, it->first));
-        }
+        objectSurfaces.insert(objectSurfaces.end(), l.begin(), l.end());
       }
 
       for (StringList_t::const_iterator it2 = surface2.begin ();
@@ -274,22 +264,35 @@ namespace hpp {
         else if (jointAndShapes.has (*it2))
           l = jointAndShapes.get (*it2);
         else throw std::runtime_error ("Second list of triangles not found.");
-        for (JointAndShapes_t::const_iterator it = l.begin ();
-            it != l.end(); ++it) {
-          constraints.first->addFloor (ConvexShape (it->second, it->first));
-        }
+        floorSurfaces.insert(floorSurfaces.end(), l.begin(), l.end());
       }
 
-      constraints.first->setNormalMargin (margin);
+      typedef hpp::constraints::explicit_::ConvexShapeContact Constraint_t;
+      Constraint_t::Constraints_t constraints
+        (Constraint_t::createConstraintAndComplement
+         (name, robot_, floorSurfaces, objectSurfaces, margin));
 
-      addNumericalConstraint (name, Implicit::create
-			      (constraints.first));
-      addNumericalConstraint (complementName, Implicit::create
-			      (constraints.second,
-                               ComparisonTypes_t
-                               (constraints.second->outputSize(),
-                                constraints::Equality))
-                              );
+      addNumericalConstraint(boost::get<0>(constraints)->function().name(),
+                             boost::get<0>(constraints));
+      addNumericalConstraint(boost::get<1>(constraints)->function().name(),
+                             boost::get<1>(constraints));
+      addNumericalConstraint(boost::get<2>(constraints)->function().name(),
+                             boost::get<2>(constraints));
+      // Set security margin to contact constraint
+      assert(HPP_DYNAMIC_PTR_CAST(constraints::ConvexShapeContact,
+                                  boost::get<0>(constraints)->functionPtr()));
+      constraints::ConvexShapeContactPtr_t contactFunction
+        (HPP_STATIC_PTR_CAST(constraints::ConvexShapeContact,
+                             boost::get<0>(constraints)->functionPtr()));
+      contactFunction->setNormalMargin(margin);
+      constraintsAndComplements.push_back (
+          ConstraintAndComplement_t (boost::get<0>(constraints),
+                                     boost::get<1>(constraints),
+                                     boost::get<2>(constraints)));
+      if (constraintGraph ())
+        constraintGraph ()->registerConstraints(boost::get<0>(constraints),
+                                                boost::get<1>(constraints),
+                                                boost::get<2>(constraints));
     }
 
     void ProblemSolver::createPrePlacementConstraint
@@ -298,23 +301,13 @@ namespace hpp {
      const value_type& margin)
     {
       if (!robot_) throw std::runtime_error ("No robot loaded");
-      using constraints::ConvexShape;
-      using constraints::ConvexShapeContact;
-      using constraints::ConvexShapeContactPtr_t;
-
-      ConvexShapeContactPtr_t cvxShape = ConvexShapeContact::create (name, robot_);
-
-      JointAndShapes_t l;
+      JointAndShapes_t floorSurfaces, objectSurfaces, l;
       for (StringList_t::const_iterator it1 = surface1.begin ();
           it1 != surface1.end(); ++it1) {
         if (!robot_->jointAndShapes.has (*it1))
           throw std::runtime_error ("First list of triangles not found.");
         l = robot_->jointAndShapes.get (*it1);
-
-        for (JointAndShapes_t::const_iterator it = l.begin ();
-            it != l.end(); ++it) {
-          cvxShape->addObject (ConvexShape (it->second, it->first));
-        }
+        objectSurfaces.insert(objectSurfaces.end(), l.begin(), l.end());
       }
 
       for (StringList_t::const_iterator it2 = surface2.begin ();
@@ -326,16 +319,15 @@ namespace hpp {
         else if (jointAndShapes.has (*it2))
           l = jointAndShapes.get (*it2);
         else throw std::runtime_error ("Second list of triangles not found.");
-
-        for (JointAndShapes_t::const_iterator it = l.begin ();
-            it != l.end(); ++it) {
-          cvxShape->addFloor (ConvexShape (it->second, it->first));
-        }
+        floorSurfaces.insert(floorSurfaces.end(), l.begin(), l.end());
       }
 
-      cvxShape->setNormalMargin (margin + width);
-
-      addNumericalConstraint (name, Implicit::create (cvxShape));
+      hpp::constraints::ConvexShapeContactPtr_t cvxShape
+        (hpp::constraints::ConvexShapeContact::create
+         (name, robot_, floorSurfaces, objectSurfaces));
+      cvxShape->setNormalMargin(margin + width);
+      addNumericalConstraint (name, Implicit::create
+                              (cvxShape, 5 * constraints::EqualToZero));
     }
 
     void ProblemSolver::createGraspConstraint

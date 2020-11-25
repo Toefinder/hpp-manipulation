@@ -27,13 +27,18 @@ namespace hpp {
     namespace graph {
       /// This class is used to get the state of a configuration. States have to
       /// be ordered because a configuration can be in several states.
-      class HPP_MANIPULATION_DLLAPI StateSelector : public GraphComponent
+      class HPP_MANIPULATION_DLLAPI StateSelector
       {
         public:
           virtual ~StateSelector () {};
 
           /// Create a new StateSelector.
           static StateSelectorPtr_t create(const std::string& name);
+
+          const std::string& name() const
+          {
+            return name_;
+          }
 
           /// Create an empty state
           StatePtr_t createState (const std::string& name, bool waypoint = false,
@@ -48,32 +53,27 @@ namespace hpp {
           /// Returns a list of all the states
           States_t getStates () const;
 
+          /// Returns a list of all the states
+          States_t getWaypointStates () const;
+
           /// Select randomly an outgoing edge of the given state.
           virtual EdgePtr_t chooseEdge(RoadmapNodePtr_t from) const;
 
-          /// Should never be called.
-          void addNumericalConstraint (const constraints::ImplicitPtr_t& /* function */,
-              const segments_t& /* passiveDofs */ = segments_t ())
-          {
-            HPP_THROW_EXCEPTION (Bad_function_call, "This component does not have constraints.");
-          }
-
-          /// Should never be called.
-          void addLockedJointConstraint
-	    (const constraints::LockedJoint& /* constraint */)
-          {
-            HPP_THROW_EXCEPTION (Bad_function_call, "This component does not have constraints.");
-          }
-
           /// Print the object in a stream.
           virtual std::ostream& dotPrint (std::ostream& os, dot::DrawingAttributes da = dot::DrawingAttributes ()) const;
+
+          /// Set the parent graph.
+          void parentGraph(const GraphWkPtr_t& parent);
+
+          /// Set the parent graph.
+          GraphPtr_t parentGraph() const;
 
         protected:
           /// Initialization of the object.
           void init (const StateSelectorPtr_t& weak);
 
           /// Constructor
-          StateSelector (const std::string& name) : GraphComponent (name)
+          StateSelector (const std::string& name) : name_ (name)
           {}
 
           /// Print the object in a stream.
@@ -85,12 +85,21 @@ namespace hpp {
           WeighedStates_t orderedStates_;
           States_t waypoints_;
 
-          virtual void initialize () { isInit_ = true; };
-
         private:
+          /// Name of the component.
+          std::string name_;
+          /// A weak pointer to the parent graph.
+          GraphWkPtr_t graph_;
           /// Weak pointer to itself.
           StateSelectorPtr_t wkPtr_;
+
+          friend std::ostream& operator<< (std::ostream& os, const StateSelector& ss);
       }; // Class StateSelector
+
+      inline std::ostream& operator<< (std::ostream& os, const StateSelector& ss)
+      {
+        return ss.print(os);
+      }
     } // namespace graph
   } // namespace manipulation
 } // namespace hpp

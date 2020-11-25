@@ -19,6 +19,7 @@
 # define HPP_MANIPULATION_GRAPHPATHVALIDATOR_HH
 
 # include <hpp/core/path-validation.hh>
+# include <hpp/core/obstacle-user.hh>
 
 # include <hpp/manipulation/fwd.hh>
 # include <hpp/manipulation/config.hh>
@@ -42,7 +43,9 @@ namespace hpp {
     /// The encapsulated path validation is responsible for collision
     /// checking, whereas this class checks if a path is valid regarding
     /// the constraint graph.
-    class HPP_MANIPULATION_DLLAPI GraphPathValidation : public PathValidation
+    class HPP_MANIPULATION_DLLAPI GraphPathValidation :
+      public PathValidation,
+      public core::ObstacleUserInterface
     {
       public:
 	/// Check that path is valid regarding the constraint graph.
@@ -95,19 +98,56 @@ namespace hpp {
           static GraphPathValidationPtr_t create (
               const pinocchio::DevicePtr_t& robot, const value_type& stepSize);
 
-        void addObstacle (const hpp::core::CollisionObjectPtr_t&);
+        /// Add obstacle in the environment
+        ///
+        /// Dynamic cast inner path validation into
+        /// hpp::core::ObstacleUserInterface and calls
+        /// hpp::core::ObstacleUserInterface::addObstacle in case of success.
+        void addObstacle (const hpp::core::CollisionObjectConstPtr_t& object)
+        {
+          boost::shared_ptr<core::ObstacleUserInterface> oui =
+            HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+          if (oui) oui->addObstacle (object);
+        }
 
         /// Remove a collision pair between a joint and an obstacle
-        /// \param joint the joint that holds the inner objects,
-        /// \param obstacle the obstacle to remove.
-        /// \notice collision configuration validation needs to know about
-        /// obstacles. This virtual method does nothing for configuration
-        /// validation methods that do not care about obstacles.
-        virtual void removeObstacleFromJoint (const JointPtr_t& joint,
-            const pinocchio::CollisionObjectPtr_t& obstacle)
+        ///
+        /// Dynamic cast inner path validation into
+        /// hpp::core::ObstacleUserInterface and calls
+        /// hpp::core::ObstacleUserInterface::removeObstacleFromJoint in case
+        /// of success.
+        void removeObstacleFromJoint (const JointPtr_t& joint,
+            const pinocchio::CollisionObjectConstPtr_t& obstacle)
         {
-          assert (pathValidation_);
-          pathValidation_->removeObstacleFromJoint (joint, obstacle);
+          boost::shared_ptr<core::ObstacleUserInterface> oui =
+            HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+          if (oui) oui->removeObstacleFromJoint (joint, obstacle);
+        }
+
+        /// \brief Filter collision pairs.
+        ///
+        /// Dynamic cast inner path validation into
+        /// hpp::core::ObstacleUserInterface and calls
+        /// hpp::core::ObstacleUserInterface::filterCollisionPairs in case of
+        /// success.
+        void filterCollisionPairs (const core::RelativeMotion::matrix_type& relMotion)
+        {
+          boost::shared_ptr<core::ObstacleUserInterface> oui =
+            HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+          if (oui) oui->filterCollisionPairs (relMotion);
+        }
+
+        /// Set different security margins for collision pairs
+        ///
+        /// Dynamic cast inner path validation into
+        /// hpp::core::ObstacleUserInterface and calls
+        /// hpp::core::ObstacleUserInterface::setSecurityMargins in case of
+        /// success.
+        void setSecurityMargins(const matrix_t& securityMargins)
+        {
+          boost::shared_ptr<core::ObstacleUserInterface> oui =
+            HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+          if (oui) oui->setSecurityMargins(securityMargins);
         }
 
       protected:

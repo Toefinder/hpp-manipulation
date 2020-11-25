@@ -35,6 +35,7 @@ namespace hpp {
         Graph* ptr = new Graph (name, problem);
         GraphPtr_t shPtr (ptr);
         ptr->init (shPtr, robot);
+        shPtr->createStateSelector (name);
         return shPtr;
       }
 
@@ -49,43 +50,44 @@ namespace hpp {
             );
       }
 
-      void Graph::initialize ()
+      void Graph::initialize()
       {
         hists_.clear ();
         assert(components_.size() >= 1 && components_[0].lock() == wkPtr_.lock());
         for (std::size_t i = 1; i < components_.size(); ++i)
           components_[i].lock()->initialize();
+        constraintsAndComplements_.clear ();
         isInit_ = true;
       }
 
-      StateSelectorPtr_t Graph::createNodeSelector (const std::string& name)
+      void Graph::invalidate ()
       {
-        return createStateSelector (name);
+        for (std::size_t i = 1; i < components_.size(); ++i)
+        {
+          assert(components_[i].lock());
+          components_[i].lock()->invalidate();
+        }
+        isInit_ = false;
       }
 
       StateSelectorPtr_t Graph::createStateSelector (const std::string& name)
       {
-        isInit_ = false;
+        invalidate ();
         stateSelector_ = StateSelector::create (name);
         stateSelector_->parentGraph (wkPtr_);
         return stateSelector_;
       }
 
-      void Graph::nodeSelector (StateSelectorPtr_t ns)
-      {
-        stateSelector (ns);
-      }
-
       void Graph::stateSelector (StateSelectorPtr_t ns)
       {
-        isInit_ = false;
+        invalidate ();
         stateSelector_ = ns;
         stateSelector_->parentGraph (wkPtr_);
       }
 
       void Graph::maxIterations (size_type iterations)
       {
-        isInit_ = false;
+        invalidate ();
         maxIterations_ = iterations;
       }
 
@@ -96,7 +98,7 @@ namespace hpp {
 
       void Graph::errorThreshold (const value_type& threshold)
       {
-        isInit_ = false;
+        invalidate ();
         errorThreshold_ = threshold;
       }
 
@@ -114,7 +116,7 @@ namespace hpp {
       {
         if (problem_ != problem) {
           problem_ = problem;
-          setDirty();
+          invalidate();
         }
       }
 
@@ -123,20 +125,10 @@ namespace hpp {
 	return problem_;
       }
 
-      StatePtr_t Graph::getNode (ConfigurationIn_t config) const
-      {
-        return getState (config);
-      }
-
       StatePtr_t Graph::getState (ConfigurationIn_t config) const
       {
         if (!stateSelector_) throw std::runtime_error ("No StateSelector in Constraint Graph.");
         return stateSelector_->getState (config);
-      }
-
-      StatePtr_t Graph::getNode(RoadmapNodePtr_t coreNode) const
-      {
-        return stateSelector_->getState (coreNode);
       }
 
       StatePtr_t Graph::getState(RoadmapNodePtr_t coreNode) const
@@ -150,7 +142,7 @@ namespace hpp {
         Edges_t edges;
         for (Neighbors_t::const_iterator it = from->neighbors ().begin ();
             it != from->neighbors ().end (); ++it) {
-          if (it->second->to () == to)
+          if (it->second->stateTo () == to)
             edges.push_back (it->second);
         }
         return edges;
@@ -166,6 +158,11 @@ namespace hpp {
        const ImplicitPtr_t& complement,
        const ImplicitPtr_t& both)
       {
+        for (ConstraintsAndComplements_t::const_iterator it
+               (constraintsAndComplements_.begin ());
+             it != constraintsAndComplements_.end (); ++it) {
+          assert (it->constraint != constraint);
+        }
         constraintsAndComplements_.push_back (ConstraintAndComplement_t
                                               (constraint, complement, both));
       }
@@ -187,16 +184,15 @@ namespace hpp {
         return false;
       }
 
+      const ConstraintsAndComplements_t& Graph::constraintsAndComplements ()
+        const
+      {
+        return constraintsAndComplements_;
+      }
+
       ConstraintSetPtr_t Graph::configConstraint (const StatePtr_t& state) const
       {
         return state->configConstraint ();
-      }
-
-      bool Graph::getConfigErrorForNode (ConfigurationIn_t config,
-					 const StatePtr_t& state,
-					 vector_t& error) const
-      {
-	return getConfigErrorForState (config, state, error);
       }
 
       bool Graph::getConfigErrorForState (ConfigurationIn_t config,
@@ -219,7 +215,7 @@ namespace hpp {
       (ConfigurationIn_t leafConfig, ConfigurationIn_t config,
        const EdgePtr_t& edge, vector_t& error) const
       {
-	ConstraintSetPtr_t cs (configConstraint (edge));
+	ConstraintSetPtr_t cs (targetConstraint (edge));
 	ConfigProjectorPtr_t cp (cs->configProjector ());
 	if (cp) cp->rightHandSideFromConfig (leafConfig);
 	return cs->isSatisfied (config, error);
@@ -237,7 +233,12 @@ namespace hpp {
 
       ConstraintSetPtr_t Graph::configConstraint (const EdgePtr_t& edge) const
       {
-        return edge->configConstraint ();
+        return edge->targetConstraint ();
+      }
+
+      ConstraintSetPtr_t Graph::targetConstraint (const EdgePtr_t& edge) const
+      {
+        return edge->targetConstraint ();
       }
 
       ConstraintSetPtr_t Graph::pathConstraint (const EdgePtr_t& edge) const
@@ -255,6 +256,11 @@ namespace hpp {
       GraphComponents_t& Graph::components ()
       {
         return components_;
+      }
+
+      Graph::Graph (const std::string& name, const ProblemPtr_t& problem) :
+        GraphComponent (name), problem_ (problem)
+      {
       }
 
       std::ostream& Graph::dotPrint (std::ostream& os, dot::DrawingAttributes da) const

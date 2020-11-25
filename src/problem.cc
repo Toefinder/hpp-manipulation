@@ -74,17 +74,22 @@ namespace hpp {
     PathValidationPtr_t Problem::pathValidationFactory () const
     {
       PathValidationPtr_t pv (pvFactory_ (robot(), pvTol_));
-      const core::ObjectStdVector_t& obstacles (collisionObstacles ());
-      // Insert obstacles in path validation object
-      for (core::ObjectStdVector_t::const_iterator _obs = obstacles.begin ();
-	   _obs != obstacles.end (); ++_obs)
-	pv->addObstacle (*_obs);
+
+      boost::shared_ptr<core::ObstacleUserInterface> oui =
+        HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pv);
+      if (oui) {
+        const core::ObjectStdVector_t& obstacles (collisionObstacles ());
+        // Insert obstacles in path validation object
+        for (core::ObjectStdVector_t::const_iterator _obs = obstacles.begin ();
+            _obs != obstacles.end (); ++_obs)
+          oui->addObstacle (*_obs);
+      }
       GraphPathValidationPtr_t gpv = HPP_DYNAMIC_PTR_CAST(GraphPathValidation, pv);
       if (gpv) return gpv->innerValidation();
       return pv;
     }
 
-    SteeringMethodPtr_t Problem::steeringMethod () const
+    SteeringMethodPtr_t Problem::manipulationSteeringMethod () const
     {
       return HPP_DYNAMIC_PTR_CAST (SteeringMethod,
           Parent::steeringMethod());
@@ -96,7 +101,7 @@ namespace hpp {
     {
       pvFactory_ = factory;
       pvTol_ = tol;
-      if (graph_) graph_->setDirty();
+      if (graph_) graph_->invalidate();
     }
 
     void Problem::checkProblem () const

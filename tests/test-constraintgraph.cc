@@ -14,7 +14,6 @@
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
 
-#include <hpp/util/pointer.hh>
 #include <hpp/pinocchio/urdf/util.hh>
 #include <hpp/pinocchio/liegroup-element.hh>
 
@@ -22,6 +21,7 @@
 #include <hpp/core/path-validation-report.hh>
 
 #include <hpp/constraints/generic-transformation.hh>
+#include <hpp/constraints/locked-joint.hh>
 #include <hpp/constraints/relative-com.hh>
 
 #include <hpp/manipulation/constraint-set.hh>
@@ -69,16 +69,17 @@ namespace hpp_test {
 
   void initialize (bool ur5)
   {
+    components.clear();
     robot = hpp::manipulation::Device::create ("test-robot");
-    hpp::manipulation::ProblemPtr_t problem
-      (new hpp::manipulation::Problem (robot));
+    hpp::manipulation::ProblemPtr_t problem(hpp::manipulation::Problem::create
+                                            (robot));
     if (ur5) {
-#ifdef TEST_UR5
-      hpp::pinocchio::urdf::loadUrdfModel (robot, "anchor", "ur_description",
-                                           "ur5_joint_limited_robot");
-#else // TEST_UR5
-      BOOST_ERROR ("Set TEST_UR5 in cmake to activate this.");
-#endif // TEST_UR5
+      hpp::pinocchio::urdf::loadModel
+        (robot, 0, "ur5/", "anchor",
+         "package://example-robot-data/robots/ur_description/urdf/"
+         "ur5_joint_limited_robot.urdf",
+         "package://example-robot-data/robots/ur_description/srdf/"
+         "ur5_joint_limited_robot.srdf");
     }
     SteeringMethodPtr_t sm
       (hpp::manipulation::steeringMethod::Graph::create (*problem));
@@ -89,7 +90,7 @@ namespace hpp_test {
     components.push_back(graph_);
     graph_->maxIterations (20);
     graph_->errorThreshold (1e-4);
-    ns = graph_->createStateSelector("node-selector"); components.push_back(ns);
+    ns = graph_->createStateSelector("node-selector");
     n1 = ns->createState ("node 1"); components.push_back(n1);
     n2 = ns->createState ("node 2"); components.push_back(n2);
     e11 = n1->linkTo ("edge 11", n1); components.push_back(e11);
@@ -134,3 +135,32 @@ BOOST_AUTO_TEST_CASE (GraphStructure)
   BOOST_CHECK (node == n1);
 }
 
+BOOST_AUTO_TEST_CASE (Initialization)
+{
+  using namespace hpp_test;
+  using hpp_test::graph_;
+  using hpp::pinocchio::LiegroupElement;
+  using hpp::pinocchio::LiegroupSpace;
+  using hpp::constraints::LockedJoint;
+  using hpp::manipulation::graph::Edge;
+  using hpp::manipulation::graph::EdgePtr_t;
+
+  initialize(true);
+  hpp::manipulation::DevicePtr_t robot(graph_->robot());
+  graph_->addNumericalConstraint(LockedJoint::create
+    (robot->jointAt(1), LiegroupElement(LiegroupSpace::R1(true))));
+  for (std::size_t i=0; i < components.size(); ++i)
+  {
+    EdgePtr_t edge(HPP_DYNAMIC_PTR_CAST(Edge, components[i]));
+    if (edge) {
+      try {
+        edge->targetConstraint();
+        BOOST_CHECK(false && "should have thrown.");
+      } catch (const std::logic_error& exc) {
+        std::string msg(exc.what());
+        BOOST_CHECK(msg == std::string
+                    ("The graph should have been initialized first."));
+      }
+    }
+  }
+}

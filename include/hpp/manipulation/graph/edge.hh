@@ -58,6 +58,7 @@ namespace hpp {
       /// configuration in the start state by an admissible path.
       class HPP_MANIPULATION_DLLAPI Edge : public GraphComponent
       {
+        friend class WaypointEdge;
         public:
           typedef core::RelativeMotion RelativeMotion;
 
@@ -71,24 +72,53 @@ namespace hpp {
 	     const StateWkPtr_t& from,
 	     const StateWkPtr_t& to);
 
-	  /// Apply edge constraint
+	  /// Generate a reachable configuration in the target state
 	  ///
-	  /// \param nnear node containing the configuration defining the right
+	  /// \param nStart node containing the configuration defining the right
 	  ///        hand side of the edge constraint,
-	  /// \param[in,out] q configuration to which the edge constraint is
-	  ///                applied.
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear
+          /// \deprecated Use generateTargetConfig instead.
+          virtual bool applyConstraints (core::NodePtr_t nStart,
+                                         ConfigurationOut_t q) const
+            HPP_MANIPULATION_DEPRECATED;
+
+	  /// Generate a reachable configuration in the target state
 	  ///
-	  /// \sa hpp::core::ConfigProjector::rightHandSideFromConfig
-          virtual bool applyConstraints (core::NodePtr_t nnear, ConfigurationOut_t q) const;
-	  /// Apply edge constraint
+	  /// \param qStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          /// \deprecated Use generateTargetConfig instead.
+          virtual bool applyConstraints (ConfigurationIn_t qStart,
+                                         ConfigurationOut_t q) const
+            HPP_MANIPULATION_DEPRECATED;
+
+	  /// Generate a reachable configuration in the target state
 	  ///
-	  /// \param qoffset configuration defining the right hand side of the
-	  ///        edge constraint,
-	  /// \param[in,out] q configuration to which the edge constraint is
-	  ///                applied.
+	  /// \param nStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nStart.
+          virtual bool generateTargetConfig(core::NodePtr_t nStart,
+                                            ConfigurationOut_t q) const;
+
+	  /// Generate a reachable configuration in the target state
 	  ///
-	  /// \sa hpp::core::ConfigProjector::rightHandSideFromConfig
-          virtual bool applyConstraints (ConfigurationIn_t qoffset, ConfigurationOut_t q) const;
+	  /// \param qStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          virtual bool generateTargetConfig (ConfigurationIn_t qStart,
+                                             ConfigurationOut_t q) const;
 
           virtual bool canConnect (ConfigurationIn_t q1, ConfigurationIn_t q2) const;
 
@@ -96,10 +126,10 @@ namespace hpp {
               ConfigurationIn_t q2) const;
 
           /// Get the destination
-          StatePtr_t to () const;
+          StatePtr_t stateTo () const;
 
           /// Get the origin
-          StatePtr_t from () const;
+          StatePtr_t stateFrom () const;
 
           /// Get the state in which path is.
           StatePtr_t state () const
@@ -132,6 +162,23 @@ namespace hpp {
           /// Update the relative motion matrix
           void relativeMotion(const RelativeMotion::matrix_type & m);
 
+          /// Set Security margin for a pair of joints
+          ///
+          /// \param row index of joint1 + 1 in robot,
+          /// \param col index of joint2 + 1 in robot,
+          /// \param margin security margin for collision checking between
+          ///        those joints.
+          ///
+          /// \note set value to matrix [row, col] and matrix [col, row].
+          void securityMarginForPair(const size_type& row, const size_type& col,
+                                     const value_type& margin);
+
+          /// Accessor to the security margin.
+          const matrix_t& securityMargins() const
+          {
+            return securityMargins_;
+          }
+
           /// Get direction of the path compare to the edge
           /// \return true is reverse
           virtual bool direction (const core::PathPtr_t& path) const;
@@ -145,7 +192,12 @@ namespace hpp {
           virtual std::ostream& dotPrint (std::ostream& os, dot::DrawingAttributes da = dot::DrawingAttributes ()) const;
 
           /// Constraint of the destination state and of the path
-          ConstraintSetPtr_t configConstraint() const;
+          /// \deprecated Use targetConstraint instead
+          ConstraintSetPtr_t configConstraint() const
+            HPP_MANIPULATION_DEPRECATED;
+
+          /// Constraint of the destination state and of the path
+          ConstraintSetPtr_t targetConstraint() const;
 
           void setShort (bool isShort) {
             isShort_ = isShort;
@@ -166,8 +218,13 @@ namespace hpp {
           /// Constructor
           Edge (const std::string& name);
 
-          virtual ConstraintSetPtr_t buildConfigConstraint();
+          virtual ConstraintSetPtr_t buildConfigConstraint()
+            HPP_MANIPULATION_DEPRECATED;
 
+          /// Build path and target state constraint set.
+          virtual ConstraintSetPtr_t buildTargetConstraint();
+
+          /// Build path constraints
           virtual ConstraintSetPtr_t buildPathConstraint();
 
           virtual void initialize ();
@@ -183,7 +240,7 @@ namespace hpp {
 
           /// Constraint ensuring that a q_proj will be in to_ and in the
           /// same leaf of to_ as the configuration used for initialization.
-          ConstraintSetPtr_t configConstraints_;
+          ConstraintSetPtr_t targetConstraints_;
 
           /// The two ends of the transition.
           StateWkPtr_t from_, to_;
@@ -196,6 +253,9 @@ namespace hpp {
 
 	  /// Path validation associated to the edge
           mutable RelativeMotion::matrix_type relMotion_;
+          /// matrix of security margins for collision checking between joints
+          matrix_t securityMargins_;
+
           core::PathValidationPtr_t pathValidation_;
 
           /// Weak pointer to itself.
@@ -204,21 +264,34 @@ namespace hpp {
           friend class Graph;
       }; // class Edge
 
-      /// Edge with waypoint.
-      /// Waypoints are handled recursively, i.e.\ class WaypointEdge contains only a
-      /// State and an Edge, the second Edge being itself.
-      /// In this package, the State in a WaypointEdge is semantically different from other State
-      /// because it does not correspond to a state with different manipulation rules. It has
-      /// the same rules as another State (either Edge::from() or Edge::to()).
+      /// Edge with intermediate waypoint states.
       ///
-      /// Semantically, a waypoint State is fully part of the WaypointEdge. When a corresponding path
-      /// reaches it, no planning is required to know what to do next. To the contrary, when a path reaches
-      /// Edge::from() or Edge::to(), there may be several possibilities.
+      /// This class implements a transition from one state to another state
+      /// with intermediate states in-between. This feature is particularly
+      /// interesting when manipulating objects. Between a state where a gripper
+      /// does not grasp an object and a state where the same gripper grasps
+      /// the object, it is useful to add an intermediate state where the
+      /// gripper is close to the object.
+      ///
+      /// Waypoints are handled recursively, i.e.\ class WaypointEdge
+      /// contains only a State and an Edge, the second Edge being
+      /// itself. In this package, the State in a WaypointEdge is
+      /// semantically different from other State because it does not
+      /// correspond to a state with different manipulation rules. It
+      /// has the same rules as another State (either Edge::stateFrom() or
+      /// Edge::stateTo()).
+      ///
+      /// Semantically, a waypoint State is fully part of the WaypointEdge.
+      /// When a corresponding path reaches it, no planning is required to know
+      /// what to do next. To the contrary, when a path reaches
+      /// Edge::stateFrom() or Edge::stateTo(), there may be several
+      /// possibilities.
       ///
       /// \note
-      ///   Implementation details: let's say, between the two states \f$N_f\f$ and \f$N_t\f$,
-      ///   two waypoints are required:
-      ///   \f$ N_f \xrightarrow{e_0} n_0 \xrightarrow{e_1} n_1 \xrightarrow{e_2} N_t\f$.
+      ///   Implementation details: let's say, between the two states \f$N_f\f$
+      ///   and \f$N_t\f$, two waypoints are required:
+      ///   \f$ N_f \xrightarrow{e_0} n_0 \xrightarrow{e_1} n_1
+      ///   \xrightarrow{e_2} N_t\f$.
       ///   The WaypointEdge contains:
       ///   \li from: \f$N_f\f$,
       ///   \li to: \f$N_t\f$,
@@ -238,7 +311,30 @@ namespace hpp {
 
           virtual bool build (core::PathPtr_t& path, ConfigurationIn_t q1, ConfigurationIn_t q2) const;
 
-          virtual bool applyConstraints (ConfigurationIn_t qoffset, ConfigurationOut_t q) const;
+
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param qStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          /// deprecated Used generateTargetConfig instead.
+          virtual bool applyConstraints (ConfigurationIn_t qStart,
+                                         ConfigurationOut_t q) const
+            HPP_MANIPULATION_DEPRECATED;
+
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param qStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          virtual bool generateTargetConfig (ConfigurationIn_t qStart,
+                                             ConfigurationOut_t q) const;
 
           /// Return the index-th edge.
           const EdgePtr_t& waypoint (const std::size_t index) const;
@@ -268,6 +364,8 @@ namespace hpp {
           void init (const WaypointEdgeWkPtr_t& weak, const GraphWkPtr_t& graph, const StateWkPtr_t& from,
               const StateWkPtr_t& to);
 
+          /// Initialize each of the internal edges
+          virtual void initialize ();
           /// Print the object in a stream.
           virtual std::ostream& print (std::ostream& os) const;
 
@@ -281,7 +379,78 @@ namespace hpp {
           WaypointEdgeWkPtr_t wkPtr_;
       }; // class WaypointEdge
 
-      /// Edge that find intersection of level set.
+      /// Edge that handles crossed foliations
+      ///
+      /// Let us consider the following simple constraint graph
+      /// corresponding to a robot grasping an object with one gripper.
+      ///
+      /// \image html constraint-graph.png "Simple constraint graph corresponding to a robot grasping an object."
+      ///
+      /// In order to disambiguate, we assume here that
+      /// \li transition <b>Grasp object</b> is in \b Placement state,
+      /// \li transition <b>Release object</b> is in \b Grasp state.
+      ///
+      /// If state \b Placement is defined by the object lying on a planar
+      /// polygonal surface, then
+      /// \li state \b Placement,
+      /// \li transition \b Transit, and
+      /// \li transition <b>Grasp object</b>
+      ///
+      /// are all constrained in a foliated manifold parameterized by the
+      /// position of the box on the surface.
+      ///
+      /// Likewise, if the object is cylindrical the grasp may have a degree
+      /// of freedom corresponding to the angle around z-axis of the gripper
+      /// with respect to the object. See classes
+      /// \link hpp::manipulation::Handle Handle\endlink and
+      /// \link hpp::pinocchio::Gripper Gripper\endlink for details.
+      /// In this latter case,
+      /// \li state \b Grasp,
+      /// \li transition \b Transfer, and
+      /// \li transition <b>Release object</b>
+      ///
+      /// are all constrained in a foliated manifold parameterized by the
+      /// angle around z-axis of the gripper with respect to the object.
+      ///
+      /// Let us denote
+      /// \li \c grasp the numerical constraint defining state \b Grasp,
+      /// \li \c placement the numerical constraint defining state \b Placement,
+      /// \li \c grasp_comp the parameterized constraint defining a leaf
+      ///     of \c Transfer (the angle between the gripper and the
+      ///     object),
+      /// \li \c placement_comp the parameterized constraint defining a leaf
+      ///     of \b Placement (the position of the object on the contact
+      ///     surface).
+      ///
+      /// As explained in <a
+      /// href="https://hal.archives-ouvertes.fr/hal-01358767">this
+      /// paper </a>, we are in the crossed foliation case and manipulation RRT
+      /// will never be able to connect trees expanding in different leaves of
+      /// the foliation.
+      ///
+      /// This class solves this issue in the following way by creating an
+      /// instance of LevelSetEdge between \b Placement and \b Grasp.
+      ///
+      /// When extending a configuration \f$\mathbf{q}_{start}\f$ in state
+      /// \b Placement, this transition will produce a target configuration
+      /// (method \link LevelSetEdge::generateTargetConfig generateTargetConfig)
+      /// \endlink as follows.
+      ///
+      /// \li pick a random configuration \f$\mathbf{q}_rand\f$, in the edge
+      /// histogram (see method \link LevelSetEdge::histogram histogram\endlink)
+      /// \li compute right hand side of \c grasp_comp with
+      ///     \f$\mathbf{q}_{rand}\f$,
+      /// \li compute right hand side of \c placement_comp with
+      ///     \f$\mathbf{q}_{start}\f$,
+      /// \li solve (\c grasp, \c placement, \c placement_comp, \c grasp_comp)
+      ///     using input configuration \f$\mathbf{q}\f$. Note that the
+      /// parent method Edge::generateTargetConfig does the same without
+      /// adding \c grasp_comp.
+      ///
+      /// The constraints parameterizing the target state foliation
+      /// (\c graps_comp in our example) are passed to class instances
+      /// using method \link LevelSetEdge::insertParamConstraint
+      /// insertParamConstraint\endlink.
       class HPP_MANIPULATION_DLLAPI LevelSetEdge : public Edge
       {
         public:
@@ -293,35 +462,115 @@ namespace hpp {
 	     const GraphWkPtr_t& graph, const StateWkPtr_t& from,
 	     const StateWkPtr_t& to);
 
-          virtual bool applyConstraints (ConfigurationIn_t qoffset, ConfigurationOut_t q) const;
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param nStart node containing the configuration defining the right
+	  ///        hand side of the edge constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear
+          /// \deprecated Use generateTargetConfig instead.
+          virtual bool applyConstraints (core::NodePtr_t nStart,
+                                         ConfigurationOut_t q) const
+            HPP_MANIPULATION_DEPRECATED;
 
-          virtual bool applyConstraints (core::NodePtr_t n_offset, ConfigurationOut_t q) const;
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param qStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          /// \deprecated Use generateTargetConfig instead.
+          virtual bool applyConstraints (ConfigurationIn_t qStart,
+                                         ConfigurationOut_t q) const
+            HPP_MANIPULATION_DEPRECATED;
 
-          virtual ConstraintSetPtr_t buildConfigConstraint();
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param nStart node containing the configuration defining the right
+	  ///        hand side of the edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nStart.
+          virtual bool generateTargetConfig(core::NodePtr_t nStart,
+                                            ConfigurationOut_t q) const;
 
+	  /// Generate a reachable configuration in the target state
+	  ///
+	  /// \param qStart configuration defining the right hand side of the
+          ///               edge path constraint,
+	  /// \param[in,out] q input configuration used to initialize the
+          ///                numerical solver and output configuration lying
+          ///                in the target state and reachable along the edge
+          ///                from nnear.
+          virtual bool generateTargetConfig (ConfigurationIn_t qStart,
+                                             ConfigurationOut_t q) const;
+
+          /// Generate a reachable configuration in leaf of target state
+	  /// \param qStart configuration defining the right hand side of the
+          ///               edge path constraint,
+          /// \param qLeaf configuration used to set the right hand side of
+          ///        the target state foliation. See method
+          ///        \link LevelSetEdge::insertParamConstraint
+          ///        insertParamConstraint\endlink.
+          bool generateTargetConfigOnLeaf(ConfigurationIn_t qStart,
+                                          ConfigurationIn_t qLeaf,
+                                          ConfigurationOut_t q) const;
+
+          /// \deprecated Use buildTargetConstraint instead
+          virtual ConstraintSetPtr_t buildConfigConstraint()
+            HPP_MANIPULATION_DEPRECATED;
+
+          /// Build path and target state constraints
+          virtual ConstraintSetPtr_t buildTargetConstraint();
+
+          /// Build the histogram
+          /// \sa LevelSetEdge::histogram.
           void buildHistogram ();
 
+          /// Return pointer on histogram of the edge
+          ///
+          /// The edge histogram is a container of configurations defined by
+          /// a set of constraints called the <b>condition constraints</b>
+          /// that a configuration should satisfy to be inserted in the
+          /// histogram.
+          ///
+          /// The histogram is passed to the Roadmap via the graph (method
+          /// Graph::insertHistogram). The roadmap then populates the histogram
+          /// with all new configurations satisfying the condition constraints.
+          ///
+          /// The condition constraints should therefore be the constraints of
+          /// the target state of the level set edge.
+          ///
+          /// \sa LevelSetEdge::conditionConstraints
+          ///     LevelSetEdge::insertConditionConstraint
           LeafHistogramPtr_t histogram () const;
 
           /// \name Foliation definition
           /// \{
 
-          /// Insert a numerical constraint that parametrizes the foliation
+          /// Insert a constraints parameterizing the target state foliation
+          /// \param nm the numerical constraint,
+          /// \param passiveDofs the passive degrees of freedom of the
+          ///        constraint.
           void insertParamConstraint (const ImplicitPtr_t& nm,
               const segments_t& passiveDofs = segments_t ());
 
-          void insertParamConstraint (const DifferentiableFunctionPtr_t function, const ComparisonTypes_t ineq)
-            HPP_MANIPULATION_DEPRECATED;
+          /// Get constraints parameterizing the target state foliation
+          const NumericalConstraints_t& paramConstraints() const;
 
-          /// Insert a LockedJoint that parametrizes the foliation
-          void insertParamConstraint (const LockedJointPtr_t lockedJoint);
-
-          /// Insert a numerical constraint that defines the foliation
+          /// Insert a condition constraint
+          /// \sa LevelSetEdge::histogram
           void insertConditionConstraint (const ImplicitPtr_t& nm,
               const segments_t& passiveDofs = segments_t ());
 
-          /// Insert a LockedJoint that defines the foliation
-          void insertConditionConstraint (const LockedJointPtr_t lockedJoint);
+          /// Get constraints parameterizing the target state foliation
+          /// \sa LevelSetEdge::histogram
+          const NumericalConstraints_t& conditionConstraints() const;
           /// \}
 
           /// Print the object in a stream.
@@ -343,22 +592,15 @@ namespace hpp {
           virtual void initialize ();
 
         private:
-          bool applyConstraintsWithOffset (ConfigurationIn_t qoffset,
-              ConfigurationIn_t qlevelset, ConfigurationOut_t q) const;
-
           // Parametrizer
           // NumericalConstraints_t
           NumericalConstraints_t paramNumericalConstraints_;
           IntervalsContainer_t paramPassiveDofs_;
-          // LockedJoints_t
-          LockedJoints_t paramLockedJoints_;
 
           // Condition
           // NumericalConstraints_t
           NumericalConstraints_t condNumericalConstraints_;
           IntervalsContainer_t condPassiveDofs_;
-          // LockedJoints_t
-          LockedJoints_t condLockedJoints_;
 
           /// This histogram will be used to find a good level set.
           LeafHistogramPtr_t hist_;

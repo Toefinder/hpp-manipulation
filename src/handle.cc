@@ -29,9 +29,10 @@
 #include <hpp/pinocchio/joint-collection.hh>
 #include <hpp/pinocchio/gripper.hh>
 
-#include <hpp/constraints/differentiable-function.hh>
+#include <hpp/constraints/generic-transformation.hh>
 #include <hpp/constraints/implicit.hh>
 #include <hpp/constraints/explicit/relative-pose.hh>
+#include <hpp/constraints/generic-transformation.hh>
 
 #include <hpp/manipulation/device.hh>
 
@@ -41,11 +42,13 @@ namespace hpp {
     using constraints::ImplicitPtr_t;
     using constraints::Explicit;
     using constraints::ExplicitPtr_t;
+    using constraints::DifferentiableFunction;
+
     std::string Handle::className ("Handle");
     namespace {
       static const matrix3_t I3 = matrix3_t::Identity();
 
-      struct ZeroDiffFunc : public constraints::DifferentiableFunction {
+      struct ZeroDiffFunc : public DifferentiableFunction {
         ZeroDiffFunc (size_type sIn, size_type sInD,
             std::string name=std::string("Empty function"))
           : DifferentiableFunction (sIn, sInD, LiegroupSpace::empty (), name)
@@ -58,9 +61,6 @@ namespace hpp {
       };
     }
 
-    using constraints::Explicit;
-    using constraints::DifferentiableFunction;
-
     bool isHandleOnFreeflyer (const Handle& handle)
     {
       const JointPtr_t& joint = handle.joint();
@@ -72,13 +72,13 @@ namespace hpp {
       return false;
     }
 
-    inline std::size_t maskSize (const std::vector<bool>& mask)
+    inline int maskSize (const std::vector<bool>& mask)
     {
       std::size_t res (0);
       for (std::size_t i = 0; i < 6; ++i) {
         if (mask[i]) ++res;
       }
-      return res;
+      return (int)res;
     }
 
     inline bool is6Dmask (const std::vector<bool>& mask)
@@ -130,12 +130,12 @@ namespace hpp {
 	return constraints::explicit_::RelativePose::create
 	  (n, robot (), gripper->joint (), joint (),
 	   gripper->objectPositionInJoint (), localPosition(),
-           mask_, ComparisonTypes_t (6, constraints::EqualToZero));
+           6 * constraints::EqualToZero);
       }
-      return constraints::implicit::RelativePose::create
-        (n, robot (), gripper->joint (), joint (),
-         gripper->objectPositionInJoint (), localPosition(),
-         mask_, ComparisonTypes_t (maskSize (mask_), constraints::EqualToZero));
+      return Implicit::create (RelativeTransformation::create
+         (n, robot (), gripper->joint (), joint (),
+          gripper->objectPositionInJoint (), localPosition(), mask_),
+         ComparisonTypes_t (maskSize (mask_), constraints::EqualToZero));
     }
 
     ImplicitPtr_t Handle::createGraspComplement
@@ -150,14 +150,14 @@ namespace hpp {
       if (is6Dmask(mask_)) {
         return Implicit::create (
             boost::shared_ptr <ZeroDiffFunc> (new ZeroDiffFunc (
-                r->configSize(), r->numberDof (), n))
-            );
+              r->configSize(), r->numberDof (), n)), ComparisonTypes_t());
       } else {
         std::vector<bool> Cmask = complementMask(mask_);
-        return constraints::implicit::RelativePose::create
-          (n, r, gripper->joint (), joint (),
-           gripper->objectPositionInJoint (), localPosition(),
-           Cmask, ComparisonTypes_t (maskSize (Cmask), constraints::Equality));
+        return  Implicit::create (RelativeTransformation::create
+           (n, r, gripper->joint (), joint (),
+            gripper->objectPositionInJoint (), localPosition(),
+            Cmask),
+           maskSize(Cmask) * constraints::Equality);
       }
     }
 
@@ -183,28 +183,28 @@ namespace hpp {
       if (isHandleOnFreeflyer (*this)) {
 	return constraints::explicit_::RelativePose::create
 	  (n, robot (), gripper->joint (), joint (),
-	   gripper->objectPositionInJoint (), localPosition(),
-           std::vector <bool> (6, true), comp);
+	   gripper->objectPositionInJoint (), localPosition(), comp);
       }
-      return constraints::implicit::RelativePose::create
-        (n, robot (), gripper->joint (), joint (),
-         gripper->objectPositionInJoint (), localPosition(),
-         std::vector <bool> (6, true), comp);
+      return Implicit::create (RelativeTransformation::create
+         (n, robot (), gripper->joint (), joint (),
+          gripper->objectPositionInJoint (), localPosition(),
+          std::vector <bool> (6, true)),
+         comp);
     }
 
     ImplicitPtr_t Handle::createPreGrasp
     (const GripperPtr_t& gripper, const value_type& shift, std::string n) const
     {
-      Transform3f transform = gripper->objectPositionInJoint ()
+      Transform3f M = gripper->objectPositionInJoint ()
         * Transform3f (I3, vector3_t (shift,0,0));
       if (n.empty())
         n = "Pregrasp_ " + maskToStr(mask_) + "_" + name ()
           + "_" + gripper->name ();
-      ImplicitPtr_t result
-        (constraints::implicit::RelativePose::create
-         (n, robot(), gripper->joint (), joint (),
-          transform, localPosition(), mask_, ComparisonTypes_t
-          (maskSize (mask_), constraints::EqualToZero)));
+      ImplicitPtr_t result (Implicit::create
+         (RelativeTransformation::create
+          (n, robot(), gripper->joint (), joint (),
+           M, localPosition(), mask_),
+          maskSize(mask_) * constraints::EqualToZero));
       return result;
     }
 
