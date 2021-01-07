@@ -87,24 +87,20 @@ namespace hpp {
         graph::States_t states_;
       }; // class StateShooter
 
-      RMRStarPtr_t RMRStar::create (const core::Problem& problem,
+      RMRStarPtr_t RMRStar::create (const core::ProblemConstPtr_t& problem,
                                     const core::RoadmapPtr_t& roadmap)
       {
         RMRStar* ptr;
         core::RoadmapPtr_t r2 = roadmap;
-        RoadmapPtr_t r;
-        try {
-          const Problem& p = dynamic_cast < const Problem& > (problem);
-          RoadmapPtr_t r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
-          ptr = new RMRStar (p, r);
-        } catch (std::exception&) {
-          if (!r)
-            throw std::invalid_argument
-              ("The roadmap must be of type hpp::manipulation::Roadmap.");
-          else
-            throw std::invalid_argument
-              ("The problem must be of type hpp::manipulation::Problem.");
-        }
+	ProblemConstPtr_t p(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
+	RoadmapPtr_t r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
+	ptr = new RMRStar (p, r);
+	if (!r)
+	  throw std::invalid_argument
+	    ("The roadmap must be of type hpp::manipulation::Roadmap.");
+	if (!p)
+	  throw std::invalid_argument
+	    ("The problem must be of type hpp::manipulation::Problem.");
         RMRStarPtr_t shPtr (ptr);
         ptr->init (shPtr);
         return shPtr;
@@ -120,14 +116,18 @@ namespace hpp {
           const graph::GraphComponentPtr_t graphComp (graph_->get(i));
           graph::EdgePtr_t edge (HPP_DYNAMIC_PTR_CAST(graph::Edge, graphComp));
           if(edge) {
-            if (edge->from() == edge->to()) {
-              transition_ [edge->from()] = edge;
+            if (edge->stateFrom() == edge->stateTo()) {
+              transition_ [edge->stateFrom()] = edge;
               const BySubstitution& solver
                 (edge->pathConstraint ()->configProjector ()->solver());
-              statesWithLoops_.push_back (edge->from ());
+              statesWithLoops_.push_back (edge->stateFrom ());
               // Compute minimal reduced dimension among loop edges
               size_type rd (solver.reducedDimension ());
-              if (rd < minDimension) minDimension = rd;
+              if (rd < minDimension){
+		minDimension = rd;
+		hppDout(info,"state \"" << edge->stateFrom()->name()
+			<< "\": dimension:" << rd);
+	      }
               // Initialize map of right hand sides with empty vectors
               const NumericalConstraints_t& constraints (solver.constraints ());
               for (NumericalConstraints_t::const_iterator it
@@ -253,6 +253,7 @@ namespace hpp {
             // until it is valid
             ValidationReportPtr_t validationReport;
             valid = configValidations->validate (*q, validationReport);
+	    assert(valid);
           }
           ++j;
         } // while (!valid && j <= maxNbTry)
@@ -272,6 +273,8 @@ namespace hpp {
           core::RoadmapPtr_t& roadmap (pr.second);
           roadmap->addNode (q);
         }
+	// Add also config to global roadmap
+	roadmap()->addNode(q);
       }
 
       static bool belongsToLeaf (const Configuration_t& q,
@@ -312,12 +315,12 @@ namespace hpp {
 
       void RMRStar::sampleIntersectionStates ()
       {
-        size_type maxNbTry (problem ().getParameter
+        size_type maxNbTry (problem()->getParameter
                             ("RMR*/nbTryRandomConfig").intValue ());
         ConfigurationShooterPtr_t shooter
-          (manipulationProblem_.configurationShooter ());
+          (manipulationProblem_->configurationShooter ());
         ConfigValidationsPtr_t configValidations
-          (problem ().configValidations ());
+          (problem()->configValidations ());
         // Loop over intersection states
         for (graph::States_t::const_iterator it1 (statesToSample_.begin ());
              it1 != statesToSample_.end (); ++it1) {
@@ -468,14 +471,14 @@ namespace hpp {
       {
 
         //copy the problem and pass the edge contraints
-        core::Problem p (problem ());
-        p.initConfig (q);
+        core::ProblemPtr_t p (core::Problem::createCopy(problem ()));
+        p->initConfig (q);
         graph::EdgePtr_t edge (transition_ [contactState.state ()]);
-        p.steeringMethod (edge->steeringMethod ()->copy ());
-        p.constraints
+        p->steeringMethod (edge->steeringMethod ()->copy ());
+        p->constraints
           (core::ConstraintSet::createCopy(contactState.constraints ()));
-        p.pathValidation (edge->pathValidation());
-        core::RoadmapPtr_t r = core::Roadmap::create(p.distance(),p.robot());
+        p->pathValidation (edge->pathValidation());
+        core::RoadmapPtr_t r = core::Roadmap::create(p->distance(),p->robot());
         r->clear();
         r->addNode (q);
         RMRStar::ProblemAndRoadmap_t pbRoadmap (p, r);
@@ -533,7 +536,7 @@ namespace hpp {
       {
         PathPlanner::startSolve ();
         initialize ();
-        setRhsFreq_=problem().getParameter("RMR*/SetRhsFreq").intValue();
+        setRhsFreq_=problem()->getParameter("RMR*/SetRhsFreq").intValue();
         counter_=0;
 
         ConfigurationPtr_t q (roadmap()->initNode ()->configuration());
@@ -580,18 +583,18 @@ namespace hpp {
       }
       ////////////////////////////////////////////////////////////////////////////
 
-      RMRStar::RMRStar (const core::Problem& problem,
+      RMRStar::RMRStar (const core::ProblemConstPtr_t& problem,
                         const core::RoadmapPtr_t& roadmap) :
         core::PathPlanner (problem, roadmap),
         manipulationProblem_
-        (static_cast <const manipulation::Problem& > (problem)),
+        (HPP_STATIC_PTR_CAST(const manipulation::Problem, problem)),
         roadmap_ (HPP_STATIC_PTR_CAST (manipulation::Roadmap, roadmap)),
-        graph_ (manipulationProblem_.constraintGraph ()),
+        graph_ (manipulationProblem_->constraintGraph ()),
         transition_ ()
 
       {
 #ifndef NDEBUG
-        dynamic_cast <const manipulation::Problem& > (problem);
+	assert(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
         assert (HPP_DYNAMIC_PTR_CAST (manipulation::Roadmap, roadmap));
 
 #endif

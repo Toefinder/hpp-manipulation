@@ -92,7 +92,7 @@ namespace hpp {
 
       template <typename ParentSM_t, typename ChildSM_t>
       core::SteeringMethodPtr_t createSMWithGuess
-      (const core::Problem& problem)
+      (const core::ProblemConstPtr_t& problem)
       {
         boost::shared_ptr<ParentSM_t> sm = ParentSM_t::create (problem);
         sm->innerSteeringMethod (ChildSM_t::createWithGuess (problem));
@@ -101,13 +101,15 @@ namespace hpp {
 
       template <typename PathProjectorType>
       core::PathProjectorPtr_t createPathProjector
-      (const core::Problem& problem, const value_type& step)
+      (const core::ProblemConstPtr_t& problem, const value_type& step)
       {
         steeringMethod::GraphPtr_t gsm =
-          HPP_DYNAMIC_PTR_CAST (steeringMethod::Graph, problem.steeringMethod());
-        if (!gsm) throw std::logic_error ("The steering method should be of type"
-            " steeringMethod::Graph");
-        return PathProjectorType::create (problem.distance(),
+          HPP_DYNAMIC_PTR_CAST
+	  (steeringMethod::Graph, problem->steeringMethod());
+        if (!gsm) throw std::logic_error
+		    ("The steering method should be of type"
+		     " steeringMethod::Graph");
+        return PathProjectorType::create (problem->distance(),
             gsm->innerSteeringMethod(), step);
       }
     }
