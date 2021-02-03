@@ -17,8 +17,6 @@
 
 #include "hpp/manipulation/problem-solver.hh"
 
-#include <boost/bind.hpp>
-
 #include <hpp/util/pointer.hh>
 #include <hpp/util/debug.hh>
 
@@ -65,11 +63,6 @@
 #include "hpp/manipulation/steering-method/graph.hh"
 #include "hpp/manipulation/steering-method/end-effector-trajectory.hh"
 
-#if HPP_MANIPULATION_HAS_WHOLEBODY_STEP
-#include <hpp/wholebody-step/small-steps.hh>
-#include "hpp/manipulation/path-optimization/small-steps.hh"
-#endif
-
 namespace hpp {
   namespace manipulation {
     typedef constraints::Implicit Implicit;
@@ -94,7 +87,7 @@ namespace hpp {
       core::SteeringMethodPtr_t createSMWithGuess
       (const core::ProblemConstPtr_t& problem)
       {
-        boost::shared_ptr<ParentSM_t> sm = ParentSM_t::create (problem);
+        shared_ptr<ParentSM_t> sm = ParentSM_t::create (problem);
         sm->innerSteeringMethod (ChildSM_t::createWithGuess (problem));
         return sm;
       }
@@ -160,7 +153,7 @@ namespace hpp {
           createPathProjector <core::pathProjector::RecursiveHermite>);
 
       steeringMethods.add ("Graph-SteeringMethodStraight",
-          steeringMethod::Graph::create <core::SteeringMethodStraight>);
+          steeringMethod::Graph::create <core::steeringMethod::Straight>);
       steeringMethods.add ("Graph-Straight",
           steeringMethod::Graph::create <core::steeringMethod::Straight>);
       steeringMethods.add ("Graph-Hermite",
@@ -180,11 +173,6 @@ namespace hpp {
       steeringMethods.add ("CrossStateOptimization-Snibud",
           createSMWithGuess <steeringMethod::CrossStateOptimization, core::steeringMethod::Snibud>);
       steeringMethods.add ("EndEffectorTrajectory", steeringMethod::EndEffectorTrajectory::create);
-
-#if HPP_MANIPULATION_HAS_WHOLEBODY_STEP
-      pathOptimizers.add ("Walkgen", wholebodyStep::SmallSteps::create);
-      pathOptimizers.add ("Graph-Walkgen", pathOptimization::SmallSteps::create);
-#endif
 
       pathPlannerType ("M-RRT");
       steeringMethodType ("Graph-SteeringMethodStraight");
@@ -274,27 +262,27 @@ namespace hpp {
         (Constraint_t::createConstraintAndComplement
          (name, robot_, floorSurfaces, objectSurfaces, margin));
 
-      addNumericalConstraint(boost::get<0>(constraints)->function().name(),
-                             boost::get<0>(constraints));
-      addNumericalConstraint(boost::get<1>(constraints)->function().name(),
-                             boost::get<1>(constraints));
-      addNumericalConstraint(boost::get<2>(constraints)->function().name(),
-                             boost::get<2>(constraints));
+      addNumericalConstraint(std::get<0>(constraints)->function().name(),
+                             std::get<0>(constraints));
+      addNumericalConstraint(std::get<1>(constraints)->function().name(),
+                             std::get<1>(constraints));
+      addNumericalConstraint(std::get<2>(constraints)->function().name(),
+                             std::get<2>(constraints));
       // Set security margin to contact constraint
       assert(HPP_DYNAMIC_PTR_CAST(constraints::ConvexShapeContact,
-                                  boost::get<0>(constraints)->functionPtr()));
+                                  std::get<0>(constraints)->functionPtr()));
       constraints::ConvexShapeContactPtr_t contactFunction
         (HPP_STATIC_PTR_CAST(constraints::ConvexShapeContact,
-                             boost::get<0>(constraints)->functionPtr()));
+                             std::get<0>(constraints)->functionPtr()));
       contactFunction->setNormalMargin(margin);
       constraintsAndComplements.push_back (
-          ConstraintAndComplement_t (boost::get<0>(constraints),
-                                     boost::get<1>(constraints),
-                                     boost::get<2>(constraints)));
+          ConstraintAndComplement_t (std::get<0>(constraints),
+                                     std::get<1>(constraints),
+                                     std::get<2>(constraints)));
       if (constraintGraph ())
-        constraintGraph ()->registerConstraints(boost::get<0>(constraints),
-                                                boost::get<1>(constraints),
-                                                boost::get<2>(constraints));
+        constraintGraph ()->registerConstraints(std::get<0>(constraints),
+                                                std::get<1>(constraints),
+                                                std::get<2>(constraints));
     }
 
     void ProblemSolver::createPrePlacementConstraint
