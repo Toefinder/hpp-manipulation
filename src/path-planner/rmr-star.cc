@@ -135,7 +135,7 @@ namespace hpp {
                 const std::string& name ((*it)->function ().name ());
                 if (rightHandSides_.find (name) == rightHandSides_.end ()) {
                   rightHandSides_[name] =
-                    std::vector <constraints::vector_t> ();
+                    std::vector <vector_t> ();
                 }
               }
             }
@@ -383,7 +383,7 @@ namespace hpp {
                     solver.rightHandSideFromConfig (constraint, *q);
                   assert (success);
                   vector_t rhs (constraint->function ().
-                                outputSpace ()->nv ());
+                                outputSpace ()->nq ());
 #ifndef NDEBUG
                   success =
 #endif
@@ -517,15 +517,15 @@ namespace hpp {
       {
         for (NumericalConstraints_t::const_iterator it (constraints.begin ());
              it != constraints.end (); ++it) {
-          (*it)->rightHandSideFromConfig (q);
-          vector_t rhs ((*it)->rightHandSide ());
+          LiegroupElement rhs((*it)->function().outputSpace());;
+          (*it)->rightHandSideFromConfig (q, rhs);
           const std::string& name ((*it)->function ().name ());
           if (std::find (rightHandSides_ [name].begin (),
-                         rightHandSides_ [name].end (), rhs) ==
+                         rightHandSides_ [name].end (), rhs.vector()) ==
               rightHandSides_ [name].end ()) {
-            hppDout (info, "adding rhs " << displayConfig (rhs));
+            hppDout (info, "adding rhs " << rhs);
             hppDout (info, " to constraint \"" << name << "\"");
-            rightHandSides_ [name].push_back (rhs);
+            rightHandSides_ [name].push_back (rhs.vector());
           }
         }
       }
