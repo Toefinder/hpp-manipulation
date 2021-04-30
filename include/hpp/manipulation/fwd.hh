@@ -91,6 +91,8 @@ namespace hpp {
     namespace pathPlanner {
       HPP_PREDEF_CLASS (RMRStar);
       typedef shared_ptr < RMRStar > RMRStarPtr_t;
+      HPP_PREDEF_CLASS (MultipleStateOptimization);
+      typedef shared_ptr < MultipleStateOptimization > MultipleStateOptimizationPtr_t;
       HPP_PREDEF_CLASS (StateShooter);
       typedef shared_ptr < StateShooter > StateShooterPtr_t;
     } // namespace pathPlanner
