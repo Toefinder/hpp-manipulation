@@ -19,14 +19,19 @@
 
 #include <hpp/manipulation/device.hh>
 
+#include <boost/serialization/weak_ptr.hpp>
+
 #include <pinocchio/multibody/model.hpp>
 #include <pinocchio/multibody/geometry.hpp>
+
+#include <hpp/util/serialization.hh>
 
 #include <hpp/pinocchio/joint.hh>
 #include <hpp/pinocchio/joint-collection.hh>
 #include <hpp/pinocchio/gripper.hh>
 
 #include <hpp/manipulation/handle.hh>
+#include <hpp/manipulation/serialization.hh>
 
 namespace hpp {
   namespace manipulation {
@@ -119,6 +124,16 @@ namespace hpp {
       return frameIndices;
     }
 
+    void Device::removeJoints(const std::vector<std::string>& jointNames,
+        Configuration_t referenceConfig)
+    {
+      Parent_t::removeJoints(jointNames, referenceConfig);
+
+      for (auto& pair : grippers.map)
+        pair.second = pinocchio::Gripper::create(pair.second->name(), self_);
+      // TODO update handles and jointAndShapes
+    }
+
     std::ostream& Device::print (std::ostream& os) const
     {
       Parent_t::print (os);
@@ -130,5 +145,32 @@ namespace hpp {
       grippers.print (os);
       return os;
     }
-  } // namespace manipulation
+
+    template<class Archive>
+    void Device::serialize(Archive & ar, const unsigned int version)
+    {
+      using namespace boost::serialization;
+      (void) version;
+      auto* har = hpp::serialization::cast(&ar);
+
+      ar & make_nvp("base", base_object<pinocchio::HumanoidRobot>(*this));
+
+      // TODO we should throw if a pinocchio::Device instance with name name_
+      // and not of type manipulation::Device is found.
+      bool written = (!har ||
+          har->template getChildClass<pinocchio::Device, Device>(name_, false) != this);
+      ar & BOOST_SERIALIZATION_NVP(written);
+      if (written) {
+        ar & BOOST_SERIALIZATION_NVP(self_);
+        // TODO (easy) add serialization of core::Container ?
+        //ar & BOOST_SERIALIZATION_NVP(handles);
+        //ar & BOOST_SERIALIZATION_NVP(grippers);
+        //ar & BOOST_SERIALIZATION_NVP(jointAndShapes);
+      }
+    }
+
+    HPP_SERIALIZATION_IMPLEMENT(Device);
+  } // namespace pinocchio
 } // namespace hpp
+
+BOOST_CLASS_EXPORT_IMPLEMENT(hpp::manipulation::Device)

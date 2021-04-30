@@ -43,22 +43,24 @@ namespace hpp {
         protected:
           virtual Configurations_t impl_solve (vectorIn_t target) = 0;
       };
-      typedef boost::shared_ptr<IkSolverInitialization> IkSolverInitializationPtr_t;
+      typedef shared_ptr<IkSolverInitialization> IkSolverInitializationPtr_t;
 
       HPP_PREDEF_CLASS (EndEffectorTrajectory);
-      typedef boost::shared_ptr<EndEffectorTrajectory> EndEffectorTrajectoryPtr_t;
+      typedef shared_ptr<EndEffectorTrajectory> EndEffectorTrajectoryPtr_t;
 
       class HPP_MANIPULATION_DLLAPI EndEffectorTrajectory : public core::PathPlanner
       {
       public:
         /// Return shared pointer to new instance
         /// \param problem the path planning problem
-        static EndEffectorTrajectoryPtr_t create (const core::Problem& problem);
+        static EndEffectorTrajectoryPtr_t create
+	  (const core::ProblemConstPtr_t& problem);
         /// Return shared pointer to new instance
         /// \param problem the path planning problem
         /// \param roadmap previously built roadmap
         static EndEffectorTrajectoryPtr_t createWithRoadmap
-          (const core::Problem& problem, const core::RoadmapPtr_t& roadmap);
+          (const core::ProblemConstPtr_t& problem,
+	   const core::RoadmapPtr_t& roadmap);
 
         /// Initialize the problem resolution
         ///  \li call parent implementation
@@ -108,11 +110,12 @@ namespace hpp {
       protected:
         /// Protected constructor
         /// \param problem the path planning problem
-        EndEffectorTrajectory (const core::Problem& problem);
+        EndEffectorTrajectory (const core::ProblemConstPtr_t& problem);
         /// Protected constructor
         /// \param problem the path planning problem
         /// \param roadmap previously built roadmap
-        EndEffectorTrajectory (const core::Problem& problem, const core::RoadmapPtr_t& roadmap);
+        EndEffectorTrajectory (const core::ProblemConstPtr_t& problem,
+			       const core::RoadmapPtr_t& roadmap);
         /// Store weak pointer to itself
         void init (const EndEffectorTrajectoryWkPtr_t& weak);
 

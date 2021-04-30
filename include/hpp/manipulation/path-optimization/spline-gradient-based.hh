@@ -38,26 +38,26 @@ namespace hpp {
           };
           typedef core::pathOptimization::SplineGradientBased<PolynomeBasis, SplineOrder>
             Parent_t;
-          typedef boost::shared_ptr<SplineGradientBased> Ptr_t;
+          typedef shared_ptr<SplineGradientBased> Ptr_t;
 
           using typename Parent_t::Spline;
           using typename Parent_t::SplinePtr_t;
           using typename Parent_t::Splines_t;
 
           /// Return shared pointer to new object.
-          static Ptr_t create (const Problem& problem);
+          static Ptr_t create (const ProblemConstPtr_t& problem);
 
           /// This is only for compatibility purpose (with ProblemSolver).
           /// problem is statically casted to an object of type
           /// const manipulation::Problem& and method create(const Problem&)
           /// is called.
-          static Ptr_t createFromCore (const core::Problem& problem);
+          static Ptr_t createFromCore (const core::ProblemConstPtr_t& problem);
 
         protected:
           typedef typename hpp::core::pathOptimization::LinearConstraint LinearConstraint;
           using typename Parent_t::SplineOptimizationDatas_t;
 
-          SplineGradientBased (const Problem& problem);
+          SplineGradientBased(const ProblemConstPtr_t& problem);
 
           /// Get path validation for each spline
           ///

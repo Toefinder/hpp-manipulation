@@ -42,7 +42,7 @@ namespace hpp {
       Parent::init (wkPtr);
       wkPtr_ = wkPtr;
 
-      Parent::steeringMethod (steeringMethod::Graph::create (*this));
+      Parent::steeringMethod (steeringMethod::Graph::create (wkPtr_.lock()));
       distance (WeighedDistance::create (HPP_DYNAMIC_PTR_CAST(Device, robot()), graph_));
       setPathValidationFactory(core::pathValidation::createDiscretizedCollisionChecking, 0.05);
     }
@@ -75,7 +75,7 @@ namespace hpp {
     {
       PathValidationPtr_t pv (pvFactory_ (robot(), pvTol_));
 
-      boost::shared_ptr<core::ObstacleUserInterface> oui =
+      shared_ptr<core::ObstacleUserInterface> oui =
         HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pv);
       if (oui) {
         const core::ObjectStdVector_t& obstacles (collisionObstacles ());

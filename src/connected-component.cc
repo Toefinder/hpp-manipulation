@@ -59,7 +59,7 @@ namespace hpp {
     void ConnectedComponent::merge (const core::ConnectedComponentPtr_t& otherCC)
     {
       core::ConnectedComponent::merge(otherCC);
-      const ConnectedComponentPtr_t other = boost::static_pointer_cast <ConnectedComponent> (otherCC);
+      const ConnectedComponentPtr_t other = static_pointer_cast <ConnectedComponent> (otherCC);
       /// take all graph states in other->graphStateMap_ and put them in this->graphStateMap_
       /// if they already exist in this->graphStateMap_, append roadmap nodes from other graph state
       /// to graph state in this. 
@@ -83,16 +83,9 @@ namespace hpp {
       core::ConnectedComponent::addNode(node);
       // Find right graph state in map and add roadmap node to corresponding vector
       const RoadmapNodePtr_t& n = static_cast <const RoadmapNodePtr_t> (node);
-      GraphStates_t::iterator mapIt = graphStateMap_.find(roadmap_->getState(n));
-      if (mapIt != graphStateMap_.end()) {
-        mapIt->second.push_back(n);
-      // if graph state not found, add new map element with one roadmap node
-      } else {
-	RoadmapNodes_t newRoadmapNodeVector;
-	newRoadmapNodeVector.push_back(n);
-	graphStateMap_.insert(std::pair<graph::StatePtr_t, RoadmapNodes_t>
-	  (roadmap_->getState(n), newRoadmapNodeVector));
-      }
+      RoadmapPtr_t roadmap = roadmap_.lock();
+      if (!roadmap) throw std::logic_error("The roadmap of this ConnectedComponent as been deleted.");
+      graphStateMap_[roadmap->getState(n)].push_back(n);
       assert (check ());
     }
 

@@ -105,7 +105,7 @@ namespace hpp {
         /// hpp::core::ObstacleUserInterface::addObstacle in case of success.
         void addObstacle (const hpp::core::CollisionObjectConstPtr_t& object)
         {
-          boost::shared_ptr<core::ObstacleUserInterface> oui =
+          shared_ptr<core::ObstacleUserInterface> oui =
             HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
           if (oui) oui->addObstacle (object);
         }
@@ -119,7 +119,7 @@ namespace hpp {
         void removeObstacleFromJoint (const JointPtr_t& joint,
             const pinocchio::CollisionObjectConstPtr_t& obstacle)
         {
-          boost::shared_ptr<core::ObstacleUserInterface> oui =
+          shared_ptr<core::ObstacleUserInterface> oui =
             HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
           if (oui) oui->removeObstacleFromJoint (joint, obstacle);
         }
@@ -132,7 +132,7 @@ namespace hpp {
         /// success.
         void filterCollisionPairs (const core::RelativeMotion::matrix_type& relMotion)
         {
-          boost::shared_ptr<core::ObstacleUserInterface> oui =
+          shared_ptr<core::ObstacleUserInterface> oui =
             HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
           if (oui) oui->filterCollisionPairs (relMotion);
         }
@@ -145,9 +145,24 @@ namespace hpp {
         /// success.
         void setSecurityMargins(const matrix_t& securityMargins)
         {
-          boost::shared_ptr<core::ObstacleUserInterface> oui =
+          shared_ptr<core::ObstacleUserInterface> oui =
             HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
           if (oui) oui->setSecurityMargins(securityMargins);
+        }
+
+        /// \copydoc hpp::core::ObstacleUserInterface::setSecurityMarginBetweenBodies
+        ///
+        /// Dynamic cast inner path validation into
+        /// hpp::core::ObstacleUserInterface and calls
+        /// hpp::core::ObstacleUserInterface::setSecurityMargins in case of
+        /// success.
+        void setSecurityMarginBetweenBodies(const std::string& body_a,
+                                            const std::string& body_b,
+                                            const value_type& margin)
+        {
+          shared_ptr<core::ObstacleUserInterface> oui =
+            HPP_DYNAMIC_PTR_CAST(core::ObstacleUserInterface, pathValidation_);
+          if (oui) oui->setSecurityMarginBetweenBodies(body_a, body_b, margin);
         }
 
       protected:

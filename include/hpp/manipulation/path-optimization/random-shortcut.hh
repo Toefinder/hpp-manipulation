@@ -28,20 +28,21 @@ namespace hpp {
     /// \{
     namespace pathOptimization {
       HPP_PREDEF_CLASS (RandomShortcut);
-      typedef boost::shared_ptr<RandomShortcut> RandomShortcutPtr_t;
+      typedef shared_ptr<RandomShortcut> RandomShortcutPtr_t;
 
       class HPP_MANIPULATION_DLLAPI RandomShortcut :
         public core::pathOptimization::RandomShortcut
       {
         public:
           /// Return shared pointer to new object.
-          static RandomShortcutPtr_t create (const core::Problem& problem)
+          static RandomShortcutPtr_t create
+	    (const core::ProblemConstPtr_t problem)
           {
             return RandomShortcutPtr_t (new RandomShortcut (problem));
           }
 
         protected:
-          RandomShortcut (const core::Problem& problem)
+          RandomShortcut (const core::ProblemConstPtr_t& problem)
             : core::pathOptimization::RandomShortcut (problem)
           {}
 

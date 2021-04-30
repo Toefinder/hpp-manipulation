@@ -17,7 +17,7 @@
 #ifndef HPP_MANIPULATION_GRAPH_GRAPH_HH
 # define HPP_MANIPULATION_GRAPH_GRAPH_HH
 
-# include <boost/tuple/tuple.hpp>
+# include <tuple>
 # include "hpp/manipulation/config.hh"
 # include "hpp/manipulation/constraint-set.hh"
 # include "hpp/manipulation/fwd.hh"
@@ -52,6 +52,8 @@ namespace hpp {
 	  static GraphPtr_t create(const std::string& name, DevicePtr_t robot,
 				   const ProblemPtr_t& problem);
 
+          GraphPtr_t self () const { return wkPtr_.lock(); }
+
           /// Create and insert a state selector inside the graph.
           StateSelectorPtr_t createStateSelector (const std::string& name);
 
@@ -78,6 +80,10 @@ namespace hpp {
 
           /// Select randomly outgoing edge of the given node.
           EdgePtr_t chooseEdge(RoadmapNodePtr_t node) const;
+
+          /// Clear the vector of constraints and complements
+          /// \sa registerConstraints
+          void clearConstraintsAndComplement();
 
           /// Register a triple of constraints to be inserted in nodes and edges
           /// \param constraint a constraint (grasp of placement)
@@ -300,5 +306,7 @@ namespace hpp {
   } // namespace manipulation
 
 } // namespace hpp
+
+BOOST_CLASS_EXPORT_KEY(hpp::manipulation::graph::Graph)
 
 #endif // HPP_MANIPULATION_GRAPH_GRAPH_HH

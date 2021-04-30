@@ -16,8 +16,8 @@
 
 #include "hpp/manipulation/manipulation-planner.hh"
 
-#include <boost/tuple/tuple.hpp>
-#include <boost/assign/list_of.hpp>
+#include <tuple>
+#include <iterator>
 
 #include <hpp/util/pointer.hh>
 #include <hpp/util/timer.hh>
@@ -99,32 +99,33 @@ namespace hpp {
     }
 
     const std::vector<ManipulationPlanner::Reason>
-      ManipulationPlanner::reasons_ = boost::assign::list_of
-      (SuccessBin::createReason ("--Path could not be fully projected"))        // PATH_PROJECTION_SHORTER = 0, 
-      (SuccessBin::createReason ("--Path could not be fully validated"))        // PATH_VALIDATION_SHORTER = 1, 
-      (SuccessBin::createReason ("--Reached destination node"))                 // REACHED_DESTINATION_NODE = 2,
-      (SuccessBin::createReason ("Failure"))                                    // FAILURE = 3,                 
-      (SuccessBin::createReason ("--Projection of configuration on edge leaf")) // PROJECTION = 4,              
-      (SuccessBin::createReason ("--SteeringMethod"))                           // STEERING_METHOD = 5,         
-      (SuccessBin::createReason ("--Path validation returned length 0"))        // PATH_VALIDATION_ZERO = 6,    
-      (SuccessBin::createReason ("--Path could not be projected at all"));      // PATH_PROJECTION_ZERO = 7     
+      ManipulationPlanner::reasons_ = {
+        SuccessBin::createReason("--Path could not be fully projected"),        // PATH_PROJECTION_SHORTER = 0, 
+        SuccessBin::createReason("--Path could not be fully validated"),        // PATH_VALIDATION_SHORTER = 1, 
+        SuccessBin::createReason("--Reached destination node"),                 // REACHED_DESTINATION_NODE = 2,
+        SuccessBin::createReason("Failure"),                                    // FAILURE = 3,                 
+        SuccessBin::createReason("--Projection of configuration on edge leaf"), // PROJECTION = 4,              
+        SuccessBin::createReason("--SteeringMethod"),                           // STEERING_METHOD = 5,         
+        SuccessBin::createReason("--Path validation returned length 0"),        // PATH_VALIDATION_ZERO = 6,    
+        SuccessBin::createReason("--Path could not be projected at all"),       // PATH_PROJECTION_ZERO = 7     
+      };
 
-    ManipulationPlannerPtr_t ManipulationPlanner::create (const core::Problem& problem,
-        const core::RoadmapPtr_t& roadmap)
+    ManipulationPlannerPtr_t ManipulationPlanner::create
+    (const core::ProblemConstPtr_t& problem,
+     const core::RoadmapPtr_t& roadmap)
     {
       ManipulationPlanner* ptr;
       core::RoadmapPtr_t r2 = roadmap;
-      RoadmapPtr_t r;
-      try {
-        const Problem& p = dynamic_cast < const Problem& > (problem);
-        RoadmapPtr_t r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
-        ptr = new ManipulationPlanner (p, r);
-      } catch (std::exception&) {
-        if (!r)
-          throw std::invalid_argument ("The roadmap must be of type hpp::manipulation::Roadmap.");
-        else
-        throw std::invalid_argument ("The problem must be of type hpp::manipulation::Problem.");
-      }
+      ProblemConstPtr_t p = HPP_DYNAMIC_PTR_CAST (const Problem, problem);
+      RoadmapPtr_t r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
+      if (!r)
+	throw std::invalid_argument
+	  ("The roadmap must be of type hpp::manipulation::Roadmap.");
+      if (!p)
+        throw std::invalid_argument
+	  ("The problem must be of type hpp::manipulation::Problem.");
+
+      ptr = new ManipulationPlanner (p, r);
       ManipulationPlannerPtr_t shPtr (ptr);
       ptr->init (shPtr);
       return shPtr;
@@ -160,15 +161,15 @@ namespace hpp {
     {
       HPP_START_TIMECOUNTER(oneStep);
 
-      DevicePtr_t robot = HPP_DYNAMIC_PTR_CAST(Device, problem ().robot ());
+      DevicePtr_t robot = HPP_DYNAMIC_PTR_CAST(Device, problem()->robot ());
       HPP_ASSERT(robot);
-      const graph::States_t& graphStates = problem_.constraintGraph ()
+      const graph::States_t& graphStates = problem_->constraintGraph ()
         ->stateSelector ()->getStates ();
       graph::States_t::const_iterator itState;
       core::Nodes_t newNodes;
       core::PathPtr_t path;
 
-      typedef boost::tuple <core::NodePtr_t, ConfigurationPtr_t, core::PathPtr_t>
+      typedef std::tuple <core::NodePtr_t, ConfigurationPtr_t, core::PathPtr_t>
 	DelayedEdge_t;
       typedef std::vector <DelayedEdge_t> DelayedEdges_t;
       DelayedEdges_t delayedEdges;
@@ -184,7 +185,7 @@ namespace hpp {
         core::value_type distance;
         for (itState = graphStates.begin (); itState != graphStates.end (); ++itState) {
           HPP_START_TIMECOUNTER(nearestNeighbor);
-          RoadmapNodePtr_t near = roadmap_->nearestNode (q_rand, HPP_STATIC_PTR_CAST(ConnectedComponent,*itcc), *itState, distance);
+          RoadmapNodePtr_t near = roadmap_->nearestNodeInState (q_rand, HPP_STATIC_PTR_CAST(ConnectedComponent,*itcc), *itState, distance);
           HPP_STOP_TIMECOUNTER(nearestNeighbor);
           HPP_DISPLAY_LAST_TIMECOUNTER(nearestNeighbor);
           if (!near) continue;
@@ -199,7 +200,11 @@ namespace hpp {
             if (t_final != path->timeRange ().first) {
 	      bool success;
               ConfigurationPtr_t q_new (new Configuration_t
-					((*path) (t_final, success)));
+					(path->eval(t_final, success)));
+	      assert(success);
+	      assert(!path->constraints() ||
+		     path->constraints()->isSatisfied(*q_new));
+	      assert(problem_->constraintGraph ()->getState(*q_new));
               delayedEdges.push_back (DelayedEdge_t (near, q_new, path));
             }
           }
@@ -208,11 +213,10 @@ namespace hpp {
 
       HPP_START_TIMECOUNTER(delayedEdges);
       // Insert delayed edges
-      for (DelayedEdges_t::const_iterator itEdge = delayedEdges.begin ();
-	   itEdge != delayedEdges.end (); ++itEdge) {
-	const core::NodePtr_t& near = itEdge-> get <0> ();
-	const ConfigurationPtr_t& q_new = itEdge-> get <1> ();
-	const core::PathPtr_t& validPath = itEdge-> get <2> ();
+      for (const auto& edge : delayedEdges) {
+	const core::NodePtr_t& near = std::get<0>(edge);
+	const ConfigurationPtr_t& q_new = std::get<1>(edge);
+	const core::PathPtr_t& validPath = std::get<2>(edge);
         core::NodePtr_t newNode = roadmap ()->addNode (q_new);
 	roadmap ()->addEdge (near, newNode, validPath);
 	roadmap ()->addEdge (newNode, near, validPath->reverse());
@@ -252,9 +256,9 @@ namespace hpp {
         const ConfigurationPtr_t& q_rand,
         core::PathPtr_t& validPath)
     {
-      graph::GraphPtr_t graph = problem_.constraintGraph ();
-      PathProjectorPtr_t pathProjector = problem_.pathProjector ();
-      pinocchio::DevicePtr_t robot (problem_.robot ());
+      graph::GraphPtr_t graph = problem_->constraintGraph ();
+      PathProjectorPtr_t pathProjector = problem_->pathProjector ();
+      pinocchio::DevicePtr_t robot (problem_->robot ());
       value_type eps (graph->errorThreshold ());
       // Select next node in the constraint graph.
       const ConfigurationPtr_t q_near = n_near->configuration ();
@@ -295,6 +299,7 @@ namespace hpp {
         projShorter = !pathProjector->apply (path, projPath);
         if (projShorter) {
           if (!projPath || projPath->length () == 0) {
+	    hppDout(info, "");
             HPP_STOP_TIMECOUNTER (projectPath);
 	    es.addFailure (reasons_[FAILURE]);
             es.addFailure (reasons_[PATH_PROJECTION_ZERO]);
@@ -303,7 +308,7 @@ namespace hpp {
         }
         HPP_STOP_TIMECOUNTER (projectPath);
       } else projPath = path;
-      PathValidationPtr_t pathValidation (problem_.pathValidation ());
+      PathValidationPtr_t pathValidation (problem_->pathValidation ());
       PathValidationReportPtr_t report;
       core::PathPtr_t fullValidPath;
       HPP_START_TIMECOUNTER (validatePath);
@@ -373,9 +378,9 @@ namespace hpp {
 
     inline std::size_t ManipulationPlanner::tryConnectToRoadmap (const core::Nodes_t nodes)
     {
-      PathProjectorPtr_t pathProjector (problem().pathProjector ());
+      PathProjectorPtr_t pathProjector (problem()->pathProjector ());
       core::PathPtr_t path;
-      graph::GraphPtr_t graph = problem_.constraintGraph ();
+      graph::GraphPtr_t graph = problem_->constraintGraph ();
       graph::Edges_t possibleEdges;
 
       bool connectSucceed = false;
@@ -404,7 +409,8 @@ namespace hpp {
             graph::StatePtr_t s2 = getState (graph, *itn2);
             assert (q1 != q2);
 
-            path = connect (q1, q2, s1, s2, graph, pathProjector, problem_.pathValidation());
+            path = connect (q1, q2, s1, s2, graph, pathProjector,
+			    problem_->pathValidation());
 
             if (path) {
               nbConnection++;
@@ -427,16 +433,16 @@ namespace hpp {
 
     inline std::size_t ManipulationPlanner::tryConnectNewNodes (const core::Nodes_t nodes)
     {
-      PathProjectorPtr_t pathProjector (problem().pathProjector ());
+      PathProjectorPtr_t pathProjector (problem()->pathProjector ());
       core::PathPtr_t path;
-      graph::GraphPtr_t graph = problem_.constraintGraph ();
+      graph::GraphPtr_t graph = problem_->constraintGraph ();
       std::size_t nbConnection = 0;
       for (core::Nodes_t::const_iterator itn1 = nodes.begin ();
           itn1 != nodes.end (); ++itn1) {
         const Configuration_t& q1 (*(*itn1)->configuration ());
         graph::StatePtr_t s1 = getState (graph, *itn1);
 
-        for (core::Nodes_t::const_iterator itn2 = boost::next (itn1);
+        for (core::Nodes_t::const_iterator itn2 = std::next (itn1);
             itn2 != nodes.end (); ++itn2) {
           if ((*itn1)->connectedComponent () == (*itn2)->connectedComponent ())
             continue;
@@ -447,7 +453,8 @@ namespace hpp {
           graph::StatePtr_t s2 = getState (graph, *itn2);
           assert (q1 != q2);
 
-          path = connect (q1, q2, s1, s2, graph, pathProjector, problem_.pathValidation());
+          path = connect (q1, q2, s1, s2, graph, pathProjector,
+			  problem_->pathValidation());
           if (path) {
             nbConnection++;
             if (!_1to2) roadmap ()->addEdge (*itn1, *itn2, path);
@@ -463,13 +470,14 @@ namespace hpp {
       return nbConnection;
     }
 
-    ManipulationPlanner::ManipulationPlanner (const Problem& problem,
+    ManipulationPlanner::ManipulationPlanner (const ProblemConstPtr_t& problem,
         const RoadmapPtr_t& roadmap) :
       core::PathPlanner (problem, roadmap),
-      shooter_ (problem.configurationShooter()),
+      shooter_ (problem->configurationShooter()),
       problem_ (problem), roadmap_ (roadmap),
-      extendStep_ (problem.getParameter("ManipulationPlanner/extendStep").floatValue()),
-      qProj_ (problem.robot ()->configSize ())
+      extendStep_ (problem->getParameter
+		   ("ManipulationPlanner/extendStep").floatValue()),
+      qProj_ (problem->robot ()->configSize ())
     {}
 
     void ManipulationPlanner::init (const ManipulationPlannerWkPtr_t& weak)

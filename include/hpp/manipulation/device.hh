@@ -50,6 +50,8 @@ namespace hpp {
           return shPtr;
         }
 
+        DevicePtr_t self () const { return self_.lock(); }
+
         /// Print object in a stream
         virtual std::ostream& print (std::ostream& os) const;
 
@@ -61,6 +63,9 @@ namespace hpp {
         std::vector<std::string> robotNames () const;
 
         FrameIndices_t robotFrames (const std::string& robotName) const;
+
+        void removeJoints(const std::vector<std::string>& jointNames,
+            Configuration_t referenceConfig);
 
         core::Container <HandlePtr_t> handles;
         core::Container <GripperPtr_t> grippers;
@@ -87,9 +92,17 @@ namespace hpp {
           self_ = self;
         }
 
+        /// For serialization only
+        Device() {}
+
       private:
         DeviceWkPtr_t self_;
+
+        HPP_SERIALIZABLE();
     }; // class Device
   } // namespace manipulation
 } // namespace hpp
+
+BOOST_CLASS_EXPORT_KEY(hpp::manipulation::Device)
+
 #endif // HPP_MANIPULATION_DEVICE_HH
