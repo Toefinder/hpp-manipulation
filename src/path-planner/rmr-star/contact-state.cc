@@ -79,7 +79,11 @@ namespace hpp {
           for (std::size_t i=0 ; i<num.size() ; i++) {
             constraints::ImplicitPtr_t c = num[i];
             constraints::vector_t rhs (c->rightHandSideSize ());
-            bool success (solver.getRightHandSide(num[i],rhs));
+#ifndef NDEBUG
+            bool success;
+	    success =
+#endif
+	    solver.getRightHandSide(num[i],rhs);
             assert (success);
             assert (rightHandSides_.count (c) == 0);
             rightHandSides_.insert

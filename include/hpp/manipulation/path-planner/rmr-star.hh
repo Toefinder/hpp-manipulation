@@ -58,7 +58,7 @@ namespace hpp {
         /// Create an instance and return a shared pointer to the instance
         /// \param problem reference to the problem to be solved,
         /// \param roadmap roadmap to be expanded.
-        static RMRStarPtr_t create (const core::Problem& problem,
+        static RMRStarPtr_t create (const core::ProblemConstPtr_t& problem,
                                     const core::RoadmapPtr_t& roadmap);
 
         /// One step of extension.
@@ -75,7 +75,7 @@ namespace hpp {
 
      protected:
         /// Protected constructor
-        RMRStar (const core::Problem& problem,
+        RMRStar (const core::ProblemConstPtr_t& problem,
 		 const core::RoadmapPtr_t& roadmap);
 
       private:
@@ -101,7 +101,7 @@ namespace hpp {
 	STEP step_;
 
         /// Pair (problem, roadmap)
-	typedef std::pair<core::Problem, core::RoadmapPtr_t>
+	typedef std::pair<core::ProblemPtr_t, core::RoadmapPtr_t>
           ProblemAndRoadmap_t;
         /// Map of problems and roadmaps indexed by contact states.
 	typedef std::map <ContactState , ProblemAndRoadmap_t>
@@ -124,7 +124,7 @@ namespace hpp {
         /// implicit constraints.
         StateShooterPtr_t stateShooter_;
 	/// Pointer to the problem
-        const Problem& manipulationProblem_;
+        ProblemConstPtr_t manipulationProblem_;
 
 	/// Pointer to the PathPlanner roadmap as a manipulation::roadmap
         const RoadmapPtr_t roadmap_;

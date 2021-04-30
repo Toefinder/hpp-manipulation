@@ -90,9 +90,9 @@ namespace hpp {
     typedef shared_ptr < ManipulationPlanner > ManipulationPlannerPtr_t;
     namespace pathPlanner {
       HPP_PREDEF_CLASS (RMRStar);
-      typedef boost::shared_ptr < RMRStar > RMRStarPtr_t;
+      typedef shared_ptr < RMRStar > RMRStarPtr_t;
       HPP_PREDEF_CLASS (StateShooter);
-      typedef boost::shared_ptr < StateShooter > StateShooterPtr_t;
+      typedef shared_ptr < StateShooter > StateShooterPtr_t;
     } // namespace pathPlanner
     HPP_PREDEF_CLASS (GraphPathValidation);
     typedef shared_ptr < GraphPathValidation > GraphPathValidationPtr_t;
