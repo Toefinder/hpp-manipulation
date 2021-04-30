@@ -27,14 +27,15 @@
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef HPP_MANIPULATION_PATH_PLANNER_RMR_STAR_HH
-# define HPP_MANIPULATION_PATH_PLANNER_RMR_STAR_HH
+#define HPP_MANIPULATION_PATH_PLANNER_RMR_STAR_HH
 
-# include <hpp/constraints/solver/hierarchical-iterative.hh>
-# include <hpp/core/path-planner.hh>
-# include <hpp/manipulation/graph/statistics.hh>
-# include <hpp/manipulation/graph/fwd.hh>
-# include <hpp/manipulation/fwd.hh>
-# include <hpp/manipulation/path-planner/rmr-star/contact-state.hh>
+#include <hpp/constraints/solver/hierarchical-iterative.hh>
+#include <hpp/core/path-planner.hh>
+#include <hpp/manipulation/graph/statistics.hh>
+#include <hpp/manipulation/graph/fwd.hh>
+#include <hpp/manipulation/fwd.hh>
+#include <hpp/manipulation/path-planner/rmr-star/contact-state.hh>
+#include <hpp/manipulation/path-planner/rmr-star/increasing-length-paths.hh>
 
 namespace hpp {
   namespace manipulation {
@@ -49,150 +50,199 @@ namespace hpp {
       class HPP_MANIPULATION_DLLAPI RMRStar : public core::PathPlanner
       {
       public:
-
         typedef rmrStar::ContactState ContactState;
-	typedef std::map <graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
-        /// vector of leaves
-        typedef std::vector <ContactState> ContactStates_t;
 
         /// Create an instance and return a shared pointer to the instance
         /// \param problem reference to the problem to be solved,
         /// \param roadmap roadmap to be expanded.
-        static RMRStarPtr_t create (const core::ProblemConstPtr_t& problem,
-                                    const core::RoadmapPtr_t& roadmap);
+        static RMRStarPtr_t create(const core::ProblemConstPtr_t &problem,
+                       const core::RoadmapPtr_t &roadmap);
 
         /// One step of extension.
         ///
         /// A set of constraints is chosen using the graph of constraints.
         /// A constraint extension is done using a chosen set.
         ///
-        virtual void oneStep ();
+        virtual void oneStep();
 
-	/// Map linking functions and its right hand side
-	typedef std::map <std::string, std::vector <constraints::vector_t> >
+        /// Map linking functions and its right hand side
+        typedef std::multimap<constraints::ImplicitPtr_t,
+                    constraints::vector_t>
           RightHandSides_t;
-	RightHandSides_t rightHandSides_;
+        RightHandSides_t rightHandSides_;
 
-     protected:
+      protected:
         /// Protected constructor
-        RMRStar (const core::ProblemConstPtr_t& problem,
-		 const core::RoadmapPtr_t& roadmap);
+        RMRStar(const core::ProblemConstPtr_t &problem,
+            const core::RoadmapPtr_t &roadmap);
 
       private:
+        /// Pointer to the kPrmStar method
+        core::pathPlanner::kPrmStarPtr_t kPrm_;
 
-	/// Pointer to the kPrmStar method
-	core::pathPlanner::kPrmStarPtr_t kPrm_;
+        ///Pointer to the edge steering method
+        core::SteeringMethodPtr_t edgeSteeringMethod_;
 
-	///Pointer to the edge steering method
-	core::SteeringMethodPtr_t edgeSteeringMethod_;
+        /// Latest roadmap built in a leaf
+        core::RoadmapPtr_t latestRoadmap_;
 
-	/// Latest roadmap built in a leaf
-	core::RoadmapPtr_t latestRoadmap_;
+        ///Random config used as q_init
+        mutable ConfigurationPtr_t q_rand_;
 
-	/// latest contact state
-	ContactState latestLeaf_;
+        /// latest contact state
+        ContactState latestLeaf_;
 
-	/// Computation step of the algorithm
-	enum STEP {
-	  SAMPLE_INTERSECTION_STATES,
-	  BUILD_ROADMAP
-	};
+        ///Pointer to the graph problem
+        graph::GraphPtr_t graph_;
 
-	STEP step_;
+        /// Computation step of the algorithm
+        enum STEP
+        {
+          BUILD_ROADMAP,
+          CONNECT_ROADMAPS
+        };
+        STEP step_;
 
-        /// Pair (problem, roadmap)
-	typedef std::pair<core::ProblemPtr_t, core::RoadmapPtr_t>
-          ProblemAndRoadmap_t;
-        /// Map of problems and roadmaps indexed by contact states.
-	typedef std::map <ContactState , ProblemAndRoadmap_t>
-          LeafRoadmaps_t;
-	LeafRoadmaps_t leafRoadmaps_;
-        /// Leaves to explore in each state
-        std::map <graph::StatePtr_t, ContactStates_t> leaves_;
-        /// Index in allStates_ from shared pointer to state
-        std::map <graph::StatePtr_t, size_type> index_;
-        /// Matrix of inclusion between states
-        /// if stateInclusion_ (s1->id (), s2->id ()) is true, s1 is included
-        /// in s2.
-        Eigen::Matrix <bool, Eigen::Dynamic, Eigen::Dynamic> stateInclusion_;
-        /// Matrix of intersection between states
-        // if stateIntersection (i1, i2) = s,
-        // statesToSample_ [i1] inter statesToSample_ [i2] = s
-        Eigen::Matrix <graph::StatePtr_t, Eigen::Dynamic, Eigen::Dynamic>
-          stateIntersection_;
-        /// Shooter that uniformly samples states with minimal number of
-        /// implicit constraints.
-        StateShooterPtr_t stateShooter_;
-	/// Pointer to the problem
-        ProblemConstPtr_t manipulationProblem_;
-
-	/// Pointer to the PathPlanner roadmap as a manipulation::roadmap
-        const RoadmapPtr_t roadmap_;
-
-	///Pointer to the graph problem
-	graph::GraphPtr_t graph_;
-
-	///Number of sample contact trials before shooting
-	///a configuration with a random right hand side
-	size_type setRhsFreq_;
-
+        typedef std::map<graph::StatePtr_t, graph::EdgePtr_t> TransitionMap_t;
         /// Mapping between states and loop transitions.
-	TransitionMap_t transition_;
+        TransitionMap_t loopTransition_;
 
+        /// Vector of states with loop transitions. Also the keys of loopTransition_
+        graph::States_t statesWithLoops_;
         /// Vector of all states including waypoint states
         graph::States_t allStates_;
+        /// Index in allStates_ from shared pointer to state
+        std::map<graph::StatePtr_t, size_type> index_;
 
-        /// Vector of states with loop transitions
-        graph::States_t statesWithLoops_;
+        /// Pair (problem, roadmap)
+        typedef std::pair<core::ProblemPtr_t, core::RoadmapPtr_t>
+          ProblemAndRoadmap_t;
+        /// Map of problems and roadmaps indexed by contact states.
+        typedef std::multimap<ContactState, ProblemAndRoadmap_t>
+          LeafRoadmaps_t;
+        LeafRoadmaps_t leafRoadmaps_;
 
-        /// Vector of states with transitions of minimal reduced dimension
+        /// Pointer to the problem
+        ProblemConstPtr_t manipulationProblem_;
+
+        /// Pointer to the PathPlanner roadmap as a manipulation::roadmap
+        const RoadmapPtr_t roadmap_;
+
+        ///Number of sample contact trials before shooting
+        ///a configuration with a random right hand side
+        size_type setRhsFreq_;
+
+        ///Counter cycling from 1 to setRhsFreq_
+        int counter_;
+
+        /// Iterator going through all paths by increasing lengths
+        typedef std::shared_ptr<rmrStar::IncreasingLengthPaths> IncreasingLengthPathsPtr_t;
+        IncreasingLengthPathsPtr_t ilpIt_;
+
+        ///Number of sample contact trials before switching to
+        ///the next path with ilpIt_
+        graph::States_t ilpCurrentPath_;
+
+        ///Number of sample contact trials before switching to
+        ///the next path with ilpIt_
+        size_type ilpNextFreq_;
+
+        ///Counter cycling from 1 to ilpNextFreq_
+        int ilpCounter_;
+
+        ///List to choose a random state from in sampleContact(). Based on ilpIt_ 
         graph::States_t statesToSample_;
-	///Counter
-	int counter_;
 
-	///////////////////////////////////////////////////////////////////
-	//////////////////Members functions declaration
-	//////////////////////////////////////////////////////////////////
+        ///////////////////////////////////////////////////////////////////
+        //////////////////Members functions declaration
+        //////////////////////////////////////////////////////////////////
 
-	///Complete the map transition_ with the states of the graph as key and
-	///its loop edge associated as value
-	void initialize ();
-
-	///Compute a roadmap in the initial configuration and final configuration leaf
-	///and try to connect them
-	void startSolve ();
-
-      private:
-
-        /// store right hand sides of constraints for given configuration
-        /// in map rightHandSides_
-        void registerRightHandSides (const NumericalConstraints_t& constraints,
-                                     const Configuration_t& q);
-
-
-        /// Add a configuration to a leaf roadmap
         ///
-        /// If leafRoadmaps_ already contains a pair (problem, roadmap)
-        /// for this contact state, configuration q is added to the
-        /// roadmap. Otherwise, a roadmap is created and registered in
-        /// leafRoadmaps_.
-        void addConfigToLeafRoadmap (const ContactState& contactState,
-                                     const ConfigurationPtr_t& q);
+        void updateStatesToSample();
 
-        /// Sample intersection states
-        void sampleIntersectionStates ();
+        /// Shoot a random config in a random state of the graph and create
+        ///the associated ContactState
+        ContactState sampleContact();
 
-	///Store the contactStates, the roadmaps  and the problems associated
-	/// of the visited leaves
-	void createLeafRoadmap (const ContactState& contactState,
-                                const ConfigurationPtr_t& q);
+        /// Increment counter_ and ilpCounter_ or cycle back to 1
+        void updateCounters();
 
-	///Compare the threshold of two solvers and return the biggest
-	pinocchio::value_type biggestThreshold
-	  (const BySubstitution& solver1, const BySubstitution& solver2);
+        ///Complete the map loopTransition_ with the states of the graph as key and
+        ///its loop edge associated as value, fill the vectors stateWithLoops_
+        ///and allStates_, and compute index_.
+        void computeStatesFromGraph();
 
-}; // class RMRStar
-    } // namespace pathPlanning
-  } // namespace manipulation
+        ///Compute a roadmap in the initial configuration and final configuration leaf
+        ///and try to connect them
+        void startSolve();
+
+        ///Build a roadmap latestRoadmap_ in the leaf latestLeaf_ using kPRM*
+        void buildLatestLeafRoadmap();
+
+        ///Copy latestRoadmap_ in PathPlanner roadmap
+        void copyLatestRoadmapIntoGlobal();
+
+        ///Connect the roadmaps build on different leaves to the one of latestLeaf_
+        void connectLatestRoadmap();
+
+        ///Store the contactStates, the roadmaps and the problems associated
+        /// of the visited leaves
+        void storeLatestLeafRoadmap();
+
+        ///Store in RHS map the latest leaf functions's RHS already visited
+        void storeLatestLeafRhs();
+
+        ///Compare the threshold of two solvers and return the biggest
+        pinocchio::value_type biggestThreshold(const BySubstitution &solver1,
+                              const BySubstitution &solver2);
+
+        /// Connect two roadmaps (latestRoadmap_ and an other one)
+        /// in adjacent states connected directly
+        /// \li shoot a random config in the intersection of the two roadmaps
+        /// \li connect it with the k nearest nodes of each roadmap
+        /// \param roadmap the roadmap we want to connect with latestRoadmap_
+        /// \param k the nb of nearest nodes we connect to the intersection node
+        /// \param state the state of the roadmap leaf
+        void connectDirectStates(const ContactState &currentLeaf,
+                              const ContactState &latestLeaf,
+                              core::ValidationReportPtr_t &validationReport,
+                              const graph::StatePtr_t &currentState,
+                              const core::RoadmapPtr_t &roadmap);
+
+        /// Connect two roadmaps (latestRoadmap_ and an other one)
+        /// in adjacent states connected using waypoints
+        /// \li shoot a random config in the intersection of the two roadmaps
+        /// \li identify wich waypoint correspond to the intersect one
+        /// \li connect the waypoints from the intersection config to the first one
+        /// \li connect the first waypoint with the k nearest nodes of interRoadmpap_
+        /// \li connect the waypoints from the intersection config to the last one
+        /// \li connect the last waypoint with the k nearest nodes of roadmap_
+        /// \param roadmap the roadmap we want to connect with latestRoadmap_
+        /// \param k the nb of nearest nodes we connect to the first and last waypoint
+        /// \param state the state of the roadmap leaf
+        void connectStatesByWaypoints(const graph::WaypointEdgePtr_t &waypointEdge,
+                              const ContactState &currentLeaf,
+                              const ContactState &latestLeaf,
+                              core::ValidationReportPtr_t &validationReport,
+                              const core::RoadmapPtr_t &roadmap,
+                              const graph::StatePtr_t &currentState);
+
+        ///Add two nodes to the roadmap_ and create an edge between them
+        /// \param edge edge of the graph between the respective states of the nodes
+        /// \param q1 the configuration of the first node
+        /// \param configuration the configuration of the second node
+        void connectConfigToNode(const graph::EdgePtr_t &edge,
+                              const ConfigurationPtr_t &q1,
+                              const ConfigurationPtr_t &configuration);
+
+        ///Shoot a random config in the intersection of two leaves
+        ConfigurationPtr_t createInterStateConfig(const ContactState &currentLeaf,
+                              const ContactState &latestLeaf,
+                              const core::ConfigValidationsPtr_t &configValidations,
+                              core::ValidationReportPtr_t &validationReport,
+                              const graph::StatePtr_t &currentState);
+      }; // class RMRStar
+    }     // namespace pathPlanning
+  }       // namespace manipulation
 } // namespace hpp
 #endif

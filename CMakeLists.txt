@@ -81,8 +81,10 @@ SET(${PROJECT_NAME}_HEADERS
   include/hpp/manipulation/path-optimization/spline-gradient-based.hh
 
   include/hpp/manipulation/path-planner/end-effector-trajectory.hh
+  include/hpp/manipulation/path-planner/multiple-state-optimization.hh
   include/hpp/manipulation/path-planner/rmr-star.hh
   include/hpp/manipulation/path-planner/rmr-star/contact-state.hh
+  include/hpp/manipulation/path-planner/rmr-star/increasing-length-paths.hh
 
   include/hpp/manipulation/problem-target/state.hh
 
@@ -125,8 +127,10 @@ SET(${PROJECT_NAME}_SOURCES
   src/path-optimization/enforce-transition-semantic.cc
 
   src/path-planner/end-effector-trajectory.cc
+  src/path-planner/multiple-state-optimization.cc
   src/path-planner/rmr-star.cc
   src/path-planner/rmr-star/contact-state.cc
+  src/path-planner/rmr-star/increasing-length-paths.cc
 
   src/problem-target/state.cc
 
