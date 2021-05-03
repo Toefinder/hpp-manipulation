@@ -164,7 +164,7 @@ namespace hpp {
           createSMWithGuess <steeringMethod::Graph, core::steeringMethod::Dubins>);
       steeringMethods.add ("Graph-Snibud",
           createSMWithGuess <steeringMethod::Graph, core::steeringMethod::Snibud>);
-      /*
+      
       steeringMethods.add ("CrossStateOptimization-Straight",
           steeringMethod::CrossStateOptimization::create<core::steeringMethod::Straight>);
       steeringMethods.add ("CrossStateOptimization-ReedsShepp",
@@ -174,7 +174,7 @@ namespace hpp {
       steeringMethods.add ("CrossStateOptimization-Snibud",
           createSMWithGuess <steeringMethod::CrossStateOptimization, core::steeringMethod::Snibud>);
       steeringMethods.add ("EndEffectorTrajectory", steeringMethod::EndEffectorTrajectory::create);
-      */
+      
       pathPlannerType ("M-RRT");
       steeringMethodType ("Graph-SteeringMethodStraight");
     }

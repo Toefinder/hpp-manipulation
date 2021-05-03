@@ -15,7 +15,7 @@
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
 #define HPP_DEBUG
-#include <hpp/manipulation/path-planner/multiple-state-optimization.hh>
+#include <hpp/manipulation/path-planner/states-path-finder.hh>
 
 #include <map>
 #include <queue>
@@ -54,15 +54,15 @@ namespace hpp {
       using graph::LockedJoints_t;
       using graph::segments_t;
 
-      MultipleStateOptimizationPtr_t MultipleStateOptimization::create (
+      StatesPathFinderPtr_t StatesPathFinder::create (
           const ProblemConstPtr_t& problem)
       {
-        MultipleStateOptimizationPtr_t shPtr(new MultipleStateOptimization (problem));
+        StatesPathFinderPtr_t shPtr(new StatesPathFinder (problem));
         shPtr->init(shPtr);
         return shPtr;
       }
 
-      MultipleStateOptimizationPtr_t MultipleStateOptimization::create (
+      StatesPathFinderPtr_t StatesPathFinder::create (
           const core::ProblemConstPtr_t& problem)
       {
         assert(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
@@ -70,15 +70,15 @@ namespace hpp {
         return create (p);
       }
 
-      MultipleStateOptimizationPtr_t MultipleStateOptimization::copy () const
+      StatesPathFinderPtr_t StatesPathFinder::copy () const
       {
-        MultipleStateOptimization* ptr = new MultipleStateOptimization (*this);
-        MultipleStateOptimizationPtr_t shPtr (ptr);
+        StatesPathFinder* ptr = new StatesPathFinder (*this);
+        StatesPathFinderPtr_t shPtr (ptr);
         ptr->init (shPtr);
         return shPtr;
       }
 
-      struct MultipleStateOptimization::GraphSearchData
+      struct StatesPathFinder::GraphSearchData
       {
         StatePtr_t s1, s2;
 
@@ -140,7 +140,7 @@ namespace hpp {
         }
       };
 
-      void MultipleStateOptimization::gatherGraphConstraints ()
+      void StatesPathFinder::gatherGraphConstraints ()
       {
         typedef graph::Edge Edge;
         typedef graph::EdgePtr_t EdgePtr_t;
@@ -193,7 +193,7 @@ namespace hpp {
         }
       }
 
-      bool MultipleStateOptimization::findTransitions (GraphSearchData& d) const
+      bool StatesPathFinder::findTransitions (GraphSearchData& d) const
       {
         while (! d.queue1.empty())
         {
@@ -234,7 +234,7 @@ namespace hpp {
         return false;
       }
 
-      Edges_t MultipleStateOptimization::getTransitionList (
+      Edges_t StatesPathFinder::getTransitionList (
           GraphSearchData& d, const std::size_t& i) const
       {
         assert (d.parent1.find (d.s2) != d.parent1.end());
@@ -269,7 +269,7 @@ namespace hpp {
         }
       } // namespace internal
 
-      struct MultipleStateOptimization::OptimizationData
+      struct StatesPathFinder::OptimizationData
       {
         typedef constraints::solver::HierarchicalIterative::Saturation_t
         Saturation_t;
@@ -315,16 +315,16 @@ namespace hpp {
           for (auto solver: solvers){
             // Set maximal number of iterations for each solver
             solver.maxIterations(_problem->getParameter
-                            ("MultipleStateOptimization/maxIteration").intValue());
+                            ("StatesPathFinder/maxIteration").intValue());
             // Set error threshold for each solver
             solver.errorThreshold(_problem->getParameter
-                        ("MultipleStateOptimization/errorThreshold").floatValue());
+                        ("StatesPathFinder/errorThreshold").floatValue());
           }
           assert (transitions.size () > 0);
         }
       };
 
-      bool MultipleStateOptimization::checkConstantRightHandSide
+      bool StatesPathFinder::checkConstantRightHandSide
       (OptimizationData& d, size_type index) const
       {
         const ImplicitPtr_t c (constraints_ [index]);
@@ -376,7 +376,7 @@ namespace hpp {
         hppDout (info, oss.str ());
       }
 
-      void displayStatusMatrix (const Eigen::Matrix < MultipleStateOptimization::OptimizationData::RightHandSideStatus_t, Eigen::Dynamic, Eigen::Dynamic >& m,
+      void displayStatusMatrix (const Eigen::Matrix < StatesPathFinder::OptimizationData::RightHandSideStatus_t, Eigen::Dynamic, Eigen::Dynamic >& m,
                                 const NumericalConstraints_t& constraints,
                                 const graph::Edges_t& transitions)
       {
@@ -409,7 +409,7 @@ namespace hpp {
         hppDout (info, oss.str ());
       }
 
-      bool MultipleStateOptimization::contains
+      bool StatesPathFinder::contains
       (const Solver_t& solver, const ImplicitPtr_t& c) const
       {
         if (solver.contains (c)) return true;
@@ -422,7 +422,7 @@ namespace hpp {
         return false;
       }
 
-      bool MultipleStateOptimization::buildOptimizationProblem
+      bool StatesPathFinder::buildOptimizationProblem
       (OptimizationData& d, const graph::Edges_t& transitions) const
       {
         if (d.N == 0) return true;
@@ -512,7 +512,7 @@ namespace hpp {
         return true;
       }
 
-      bool MultipleStateOptimization::solveOptimizationProblem
+      bool StatesPathFinder::solveOptimizationProblem
       (OptimizationData& d) const
       {
         // Iterate on waypoint solvers, for each of them
@@ -547,7 +547,7 @@ namespace hpp {
              constraints::solver::lineSearch::Backtracking ());
           size_type nbTry=0;
           size_type nRandomConfigs(problem()->getParameter
-                         ("MultipleStateOptimization/nRandomConfigs").intValue());
+                         ("StatesPathFinder/nRandomConfigs").intValue());
 
           while(status != Solver_t::SUCCESS && nbTry < nRandomConfigs){
             d.waypoint.col (j) = *(problem()->configurationShooter()->shoot());
@@ -573,7 +573,7 @@ namespace hpp {
         return true;
       }
 
-      core::Configurations_t MultipleStateOptimization::buildPath (
+      core::Configurations_t StatesPathFinder::buildPath (
           OptimizationData& d, const Edges_t& transitions) const
       {
 
@@ -597,7 +597,7 @@ namespace hpp {
         return pv;
       }
 
-      core::Configurations_t MultipleStateOptimization::compute (
+      core::Configurations_t StatesPathFinder::compute (
           ConfigurationIn_t q1, ConfigurationIn_t q2) const
       {
         const graph::GraphPtr_t& graph(problem_->constraintGraph ());
@@ -606,7 +606,7 @@ namespace hpp {
         d.s2 = graph->getState (q2);
         // d.maxDepth = 2;
         d.maxDepth = problem_->getParameter
-	  ("MultipleStateOptimization/maxDepth").intValue();
+	  ("StatesPathFinder/maxDepth").intValue();
 
         // Find
         d.queue1.push (d.addInitState());
@@ -646,24 +646,24 @@ namespace hpp {
       using core::Parameter;
       using core::ParameterDescription;
 
-      HPP_START_PARAMETER_DECLARATION(MultipleStateOptimization)
+      HPP_START_PARAMETER_DECLARATION(StatesPathFinder)
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
-            "MultipleStateOptimization/maxDepth",
+            "StatesPathFinder/maxDepth",
             "Maximum number of transitions to look for.",
             Parameter((size_type)2)));
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
-            "MultipleStateOptimization/maxIteration",
+            "StatesPathFinder/maxIteration",
             "Maximum number of iterations of the Newton Raphson algorithm.",
             Parameter((size_type)60)));
       core::Problem::declareParameter(ParameterDescription(Parameter::FLOAT,
-            "MultipleStateOptimization/errorThreshold",
+            "StatesPathFinder/errorThreshold",
             "Error threshold of the Newton Raphson algorithm.",
             Parameter(1e-4)));
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
-            "MultipleStateOptimization/nRandomConfigs",
+            "StatesPathFinder/nRandomConfigs",
             "Number of random configurations to sample to initialize each "
             "solver.", Parameter((size_type)0)));
-      HPP_END_PARAMETER_DECLARATION(MultipleStateOptimization)
+      HPP_END_PARAMETER_DECLARATION(StatesPathFinder)
     } // namespace pathPlanner
   } // namespace manipulation
 } // namespace hpp

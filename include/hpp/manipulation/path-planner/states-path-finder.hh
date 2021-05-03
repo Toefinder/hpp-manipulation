@@ -15,8 +15,8 @@
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef HPP_MANIPULATION_PATH_PLANNER_MULTIPLE_STATE_OPTIMIZATION_HH
-# define HPP_MANIPULATION_PATH_PLANNER_MULTIPLE_STATE_OPTIMIZATION_HH
+#ifndef HPP_MANIPULATION_PATH_PLANNER_STATES_PATH_FINDER_HH
+# define HPP_MANIPULATION_PATH_PLANNER_STATES_PATH_FINDER_HH
 
 # include <hpp/core/fwd.hh>
 # include <hpp/core/path.hh>
@@ -43,7 +43,7 @@ namespace hpp {
       /// solves the problem as follows.
       /// - Compute the corresponding states \f$ (s_1, s_2) \f$.
       /// - For a each path \f$ (e_0, ... e_n) \f$ of length not more than
-      ///   parameter "MultipleStateOptimization/maxDepth" between
+      ///   parameter "StatesPathFinder/maxDepth" between
       ///   \f$ (s_1, s_2)\f$ in the constraint graph, do:
       ///   - define \f$ n-1 \f$ intermediate configuration \f$ p_i \f$,
       ///   - initialize the optimization problem, as explained below,
@@ -71,7 +71,7 @@ namespace hpp {
       ///                         equal to value for previous waypoint,
       ///                         equal to value for start configuration,
       ///                         equal to value for end configuration}.
-      /// - method MultipleStateOptimization::solveOptimizationProblem loops over
+      /// - method StatesPathFinder::solveOptimizationProblem loops over
       ///   the waypoint solvers, solves for each waypoint after
       ///   initializing the right hand sides with the proper values.
       /// - eventually method buildPath build paths between waypoints with
@@ -85,22 +85,22 @@ namespace hpp {
       /// away from each other if the transition between those state does
       /// not contain the grasp complement constraint. The same holds
       /// between placement and pre-placement.
-      class HPP_MANIPULATION_DLLAPI MultipleStateOptimization
+      class HPP_MANIPULATION_DLLAPI StatesPathFinder
       {
 
         public:
           struct OptimizationData;
 
-        virtual ~MultipleStateOptimization () {};
+        virtual ~StatesPathFinder () {};
 
-          static MultipleStateOptimizationPtr_t create
+          static StatesPathFinderPtr_t create
 	          (const ProblemConstPtr_t& problem);
 
           /// \warning core::Problem will be casted to Problem
-          static MultipleStateOptimizationPtr_t create
+          static StatesPathFinderPtr_t create
             (const core::ProblemConstPtr_t& problem);      
 
-          MultipleStateOptimizationPtr_t copy () const;
+          StatesPathFinderPtr_t copy () const;
 
           ////// Previously inherited from SteeringMethod
           
@@ -109,39 +109,26 @@ namespace hpp {
             return problem_;
           }
 
-          /// create a path between two configurations
-          /// \return a Path from q1 to q2 if found. An empty
-          /// Path if Path could not be built.
-          /// \note if q1 == q2, the steering method should not return an empty
-          ///       shared pointer.
-          core::Configurations_t operator() (ConfigurationIn_t q1,
-              ConfigurationIn_t q2) const
-          {
-            core::Configurations_t path;
-            try {
-              path = compute (q1, q2);
-            } catch (const core::projection_error& e) {
-              hppDout (info, "Could not build path: " << e.what());
-            }
-            assert (q1 != q2 || !path.empty());
-            return path;
-          }
+          /// create a path of configurations between two configurations
+          /// \return a Configurations_t from q1 to q2 if found. An empty
+          /// vector if a path could not be built.
+          core::Configurations_t compute (ConfigurationIn_t q1,
+                                          ConfigurationIn_t q2) const;
+
 
         protected:
-          MultipleStateOptimization (const ProblemConstPtr_t& problem) :
+          StatesPathFinder (const ProblemConstPtr_t& problem) :
             problem_ (problem), sameRightHandSide_ (), weak_ ()
           {
             gatherGraphConstraints ();
           }
 
-          MultipleStateOptimization (const MultipleStateOptimization& other) :
+          StatesPathFinder (const StatesPathFinder& other) :
             problem_ (other.problem_), constraints_ (), index_ (other.index_),
             sameRightHandSide_ (other.sameRightHandSide_),  weak_ ()
           {}
 
-          core::Configurations_t compute (ConfigurationIn_t q1, ConfigurationIn_t q2) const;
-
-          void init (MultipleStateOptimizationWkPtr_t weak)
+          void init (StatesPathFinderWkPtr_t weak)
           {
             weak_ = weak;
           }
@@ -188,9 +175,9 @@ namespace hpp {
           std::map <ImplicitPtr_t, ImplicitPtr_t> sameRightHandSide_;
 
           /// Weak pointer to itself
-          MultipleStateOptimizationWkPtr_t weak_;
+          StatesPathFinderWkPtr_t weak_;
 
-      }; // class MultipleStateOptimization
+      }; // class StatesPathFinder
       /// \}
       
 
