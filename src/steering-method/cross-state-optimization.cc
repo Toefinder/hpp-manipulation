@@ -14,7 +14,7 @@
 // General Lesser Public License for more details.  You should have
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
-
+#define HPP_DEBUG
 #include <hpp/manipulation/steering-method/cross-state-optimization.hh>
 
 #include <map>
@@ -193,6 +193,33 @@ namespace hpp {
         }
       }
 
+      static bool containsLevelSet(const graph::EdgePtr_t& e) {
+        // First case, in case given edge e is already a sub edge inside a WaypointEdge
+        graph::LevelSetEdgePtr_t lse =
+          HPP_DYNAMIC_PTR_CAST(graph::LevelSetEdge, e);
+        if (lse)
+          return true;
+        // Second case, given edge e links two non-waypoint states
+        graph::WaypointEdgePtr_t we =
+          HPP_DYNAMIC_PTR_CAST(graph::WaypointEdge, e);
+        if (!we)
+          return false;
+        for (std::size_t i = 0; i < we->nbWaypoints(); i++) {
+          graph::LevelSetEdgePtr_t lse =
+            HPP_DYNAMIC_PTR_CAST(graph::LevelSetEdge, we->waypoint(i));
+          if (lse)
+            return true;
+        }
+        return false;
+      }
+
+      static bool containsLevelSet(const graph::Edges_t& transitions) {
+        for (std::size_t i = 0; i < transitions.size(); i++)
+          if (HPP_DYNAMIC_PTR_CAST(graph::LevelSetEdge, transitions[i]))
+            return true;
+        return false;
+      }
+
       bool CrossStateOptimization::findTransitions (GraphSearchData& d) const
       {
         while (! d.queue1.empty())
@@ -209,6 +236,9 @@ namespace hpp {
           for (Neighbors_t::const_iterator _n = neighbors.begin();
               _n != neighbors.end(); ++_n) {
             EdgePtr_t transition = _n->second;
+
+            // Don't even consider level set edges
+            //if (containsLevelSet(transition)) continue;
 
             // Avoid identical consecutive transition
             if (transition == parent.e) continue;
@@ -558,18 +588,19 @@ namespace hpp {
           }
           switch (status) {
           case Solver_t::ERROR_INCREASED:
-            hppDout (info, "error increased.");
+            hppDout (info, "  error increased at step " << j);
             return false;
           case Solver_t::MAX_ITERATION_REACHED:
-            hppDout (info, "max iteration reached.");
+            hppDout (info, "  max iteration reached at step " << j);
             return false;
           case Solver_t::INFEASIBLE:
-            hppDout (info, "infeasible.");
+            hppDout (info, "  infeasible at step " << j);
             return false;
           case Solver_t::SUCCESS:
-            hppDout (info, "success.");
+            ;
           }
         }
+        hppDout (info, "  success");
         return true;
       }
 
@@ -604,7 +635,6 @@ namespace hpp {
           }
 
           if (!status || !path) {
-            hppDout (warning, "Could not build path from solution ");
             return PathVectorPtr_t();
           }
           pv->appendPath(path);
@@ -635,27 +665,35 @@ namespace hpp {
           while (! transitions.empty()) {
 #ifdef HPP_DEBUG
             std::ostringstream ss;
-            ss << "Trying solution " << idxSol << ": ";
+            ss << " Trying solution " << idxSol << ": \n\t";
             for (std::size_t j = 0; j < transitions.size(); ++j)
-              ss << transitions[j]->name() << ", ";
+              ss << transitions[j]->name() << ", \n\t";
             hppDout (info, ss.str());
 #endif // HPP_DEBUG
+            if (!containsLevelSet(transitions)) hppDout(info, "Transitions contains a LevelSetEdge");
 
             OptimizationData optData (problem(), q1, q2, transitions);
             if (buildOptimizationProblem (optData, transitions)) {
               if (solveOptimizationProblem (optData)) {
                 core::PathPtr_t path = buildPath (optData, transitions);
-                if (path) return path;
-                hppDout (info, "Failed to build path from solution: ");
+                if (path) {
+                  hppDout (warning, " Success, return path");
+                  //return path; // commented this to see other transitions which would have worked
+                } else {
+                  hppDout (warning, " Failed solution " << idxSol << " at step 5 (build path)");
+                }
               } else {
-                hppDout (info, "Failed to solve");
+                hppDout (warning, " Failed solution " << idxSol << " at step 4 (solve opt pb)");
               }
+            } else {
+              hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
             }
             ++idxSol;
             transitions = getTransitionList(d, idxSol);
           }
           maxDepthReached = findTransitions (d);
         }
+        hppDout (warning, " Max depth reached");
 
         return core::PathPtr_t ();
       }
