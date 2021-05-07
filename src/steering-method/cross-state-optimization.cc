@@ -597,6 +597,7 @@ namespace hpp {
             hppDout (info, "  infeasible at step " << j);
             return false;
           case Solver_t::SUCCESS:
+            hppDout(info,  "  config solved at transition " << j << ": " << pinocchio::displayConfig(d.waypoint.col(j)));
             ;
           }
         }
@@ -633,7 +634,8 @@ namespace hpp {
           else {
             status = t->build (path, d.waypoint.col (i-1), d.waypoint.col (i));
           }
-
+          if (!status) hppDout(warning, "status wrong " << i << " " << d.N);
+          if (!path) hppDout(warning, "path empty");
           if (!status || !path) {
             return PathVectorPtr_t();
           }
@@ -671,22 +673,27 @@ namespace hpp {
             hppDout (info, ss.str());
 #endif // HPP_DEBUG
             if (!containsLevelSet(transitions)) hppDout(info, "Transitions contains a LevelSetEdge");
+            
 
-            OptimizationData optData (problem(), q1, q2, transitions);
-            if (buildOptimizationProblem (optData, transitions)) {
-              if (solveOptimizationProblem (optData)) {
-                core::PathPtr_t path = buildPath (optData, transitions);
-                if (path) {
-                  hppDout (warning, " Success, return path");
-                  //return path; // commented this to see other transitions which would have worked
+            std::size_t nTriesForEachPath = 10;
+            for (std::size_t nTry = 0; nTry < nTriesForEachPath; nTry++) {
+              OptimizationData optData (problem(), q1, q2, transitions);
+              if (buildOptimizationProblem (optData, transitions)) {
+                if (solveOptimizationProblem (optData)) {
+                  core::PathPtr_t path = buildPath (optData, transitions);
+                  if (path) {
+                    hppDout (warning, " Success, return path, try" << nTry+1);
+                    break;
+                    //return path; // commented this to see other transitions which would have worked
+                  } else {
+                    hppDout (warning, " Failed solution " << idxSol << " at step 5 (build path)");
+                  }
                 } else {
-                  hppDout (warning, " Failed solution " << idxSol << " at step 5 (build path)");
+                  hppDout (warning, " Failed solution " << idxSol << " at step 4 (solve opt pb)");
                 }
               } else {
-                hppDout (warning, " Failed solution " << idxSol << " at step 4 (solve opt pb)");
+                hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
               }
-            } else {
-              hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
             }
             ++idxSol;
             transitions = getTransitionList(d, idxSol);
