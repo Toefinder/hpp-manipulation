@@ -129,7 +129,7 @@ namespace hpp {
 	   gripper->objectPositionInJoint (), localPosition(),
            6 * constraints::EqualToZero);
       }
-      return Implicit::create (RelativeTransformationR3xSO3::create
+      return Implicit::create (RelativeTransformationSE3::create
          (n, robot (), gripper->joint (), joint (),
           gripper->objectPositionInJoint (), localPosition()),
 			       6 * constraints::EqualToZero, mask_);
@@ -150,7 +150,7 @@ namespace hpp {
               r->configSize(), r->numberDof (), n)), ComparisonTypes_t());
       } else {
         std::vector<bool> Cmask = complementMask(mask_);
-        return  Implicit::create (RelativeTransformationR3xSO3::create
+        return  Implicit::create (RelativeTransformationSE3::create
            (n, r, gripper->joint (), joint (),
             gripper->objectPositionInJoint (), localPosition()),
            6 * constraints::Equality, Cmask);
@@ -179,7 +179,7 @@ namespace hpp {
 	  (n, robot (), gripper->joint (), joint (),
 	   gripper->objectPositionInJoint (), localPosition(), comp);
       }
-      return Implicit::create (RelativeTransformationR3xSO3::create
+      return Implicit::create (RelativeTransformationSE3::create
          (n, robot (), gripper->joint (), joint (),
           gripper->objectPositionInJoint (), localPosition()),
          comp, std::vector <bool> (6, true));
@@ -194,7 +194,7 @@ namespace hpp {
         n = "Pregrasp_ " + maskToStr(mask_) + "_" + name ()
           + "_" + gripper->name ();
       ImplicitPtr_t result (Implicit::create
-         (RelativeTransformationR3xSO3::create
+         (RelativeTransformationSE3::create
           (n, robot(), gripper->joint (), joint (),
            M, localPosition()),
           6 * constraints::EqualToZero, mask_));
