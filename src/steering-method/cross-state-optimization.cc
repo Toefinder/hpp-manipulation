@@ -204,7 +204,7 @@ namespace hpp {
           HPP_DYNAMIC_PTR_CAST(graph::WaypointEdge, e);
         if (!we)
           return false;
-        for (std::size_t i = 0; i < we->nbWaypoints(); i++) {
+        for (std::size_t i = 0; i <= we->nbWaypoints(); i++) {
           graph::LevelSetEdgePtr_t lse =
             HPP_DYNAMIC_PTR_CAST(graph::LevelSetEdge, we->waypoint(i));
           if (lse)
@@ -220,6 +220,77 @@ namespace hpp {
         return false;
       }
 
+#ifdef LSE_GET_TRANSITION_LISTS
+      /// Given an edge path "transitions", return a vector of 2^i edge paths
+      /// where i is the number of edges in transitions which have a LSE alter ego
+      static std::vector<graph::Edges_t> transitionsWithLSE(
+          const graph::GraphPtr_t& graph, const graph::Edges_t& transitions) {
+        std::vector<graph::Edges_t> altEdges(transitions.size());
+        std::vector<std::size_t> indexWithAlt;
+
+        for (std::size_t i = 0; i < transitions.size(); i++)
+        {
+          graph::StatePtr_t from = transitions[i]->stateFrom ();
+          graph::StatePtr_t to = transitions[i]->stateTo ();
+          altEdges[i] = graph->getEdges (from, to);
+          if (altEdges[i].size() == 2)
+            indexWithAlt.push_back (i);
+        }
+        std::size_t nbEdgesWithAlt = indexWithAlt.size();
+        std::size_t nbAlternatives = ((std::size_t) 1) << nbEdgesWithAlt; 
+
+        std::vector<graph::Edges_t> alternativePaths(nbAlternatives);
+        if (nbAlternatives == 1) {
+          alternativePaths[0] = transitions;
+          return alternativePaths;
+        }
+
+        for (std::size_t i = 0; i < nbAlternatives; i++)
+        {
+          std::size_t alti = 0;
+          EdgePtr_t edge;
+          graph::WaypointEdgePtr_t we;
+          for (std::size_t j = 0; j < transitions.size(); j++)
+          {
+            if (j == indexWithAlt[alti])
+            {
+              edge = altEdges[j][(i >> alti) & 1];
+              if (alti+1 != nbEdgesWithAlt)
+                alti++;
+            } else {
+              edge = transitions[j];
+            }
+            we = HPP_DYNAMIC_PTR_CAST(graph::WaypointEdge, edge);
+            if (we) {
+              for (std::size_t k = 0; k <= we->nbWaypoints(); k++)
+                alternativePaths[i].push_back(we->waypoint(k));
+            } else {
+              alternativePaths[i].push_back(edge);
+            }
+          }
+        }
+        return alternativePaths;
+      }
+
+      std::vector<Edges_t> CrossStateOptimization::getTransitionLists (
+          const GraphSearchData& d, const std::size_t& i) const
+      {
+        assert (d.parent1.find (d.s2) != d.parent1.end());
+        const GraphSearchData::state_with_depths_t& roots = d.parent1.at(d.s2);
+        if (i >= roots.size()) return std::vector<Edges_t>();
+        const GraphSearchData::state_with_depth* current = &roots[i];
+
+        Edges_t transitions;
+        transitions.reserve (current->l);
+        while (current->e) {
+          assert (current->l > 0);
+          transitions.push_back(current->e);
+          current = &d.parent1.at(current->s)[current->i];
+        }
+        std::reverse (transitions.begin(), transitions.end());
+        return transitionsWithLSE(problem_->constraintGraph(), transitions);
+      }
+#endif
       bool CrossStateOptimization::findTransitions (GraphSearchData& d) const
       {
         while (! d.queue1.empty())
@@ -237,9 +308,10 @@ namespace hpp {
               _n != neighbors.end(); ++_n) {
             EdgePtr_t transition = _n->second;
 
+#ifdef LSE_GET_TRANSITION_LISTS
             // Don't even consider level set edges
-            //if (containsLevelSet(transition)) continue;
-
+            if (containsLevelSet(transition)) continue;
+#endif
             // Avoid identical consecutive transition
             if (transition == parent.e) continue;
 
@@ -265,10 +337,10 @@ namespace hpp {
       }
 
       Edges_t CrossStateOptimization::getTransitionList (
-          GraphSearchData& d, const std::size_t& i) const
+          const GraphSearchData& d, const std::size_t& i) const
       {
         assert (d.parent1.find (d.s2) != d.parent1.end());
-        const GraphSearchData::state_with_depths_t& roots = d.parent1[d.s2];
+        const GraphSearchData::state_with_depths_t& roots = d.parent1.at(d.s2);
         Edges_t transitions;
         if (i >= roots.size()) return transitions;
 
@@ -284,7 +356,7 @@ namespace hpp {
           } else {
             transitions.push_back(current->e);
           }
-          current = &d.parent1[current->s][current->i];
+          current = &d.parent1.at(current->s)[current->i];
         }
         std::reverse (transitions.begin(), transitions.end());
         return transitions;
@@ -417,26 +489,36 @@ namespace hpp {
         oss << "\\paragraph{Edges}" << std::endl;
         oss << "\\begin{enumerate}" << std::endl;
         for (auto edge : transitions) {
-          oss << "\\item " << edge->name() << std::endl;
+          oss << "\\item \\texttt{" << edge->name() << "}" << std::endl;
         }
         oss << "\\end{enumerate}" << std::endl;
-        oss << "\\begin {tabular}{";
-        for (size_type j=0; j<m.cols () + 1; ++j)
+        oss << "\\begin {tabular}{l";
+        for (size_type j=0; j<m.cols (); ++j)
           oss << "c";
         oss << "}" << std::endl;
+        oss << "Solver index";
+        for (size_type j=0; j<m.cols (); ++j)
+          oss << " & " << j+1;
+        oss << "\\\\" << std::endl;
         for (size_type i=0; i<m.rows (); ++i) {
-          oss << constraints [i]->function ().name () << " & ";
+          oss << "\\texttt{" << constraints [i]->function ().name () << "} & " << std::endl;
           for (size_type j=0; j<m.cols (); ++j) {
             oss << m (i,j);
-            if (j < m.cols () - 1) {
-              oss << " & " << std::endl;
-            }
+            if (j < m.cols () - 1)
+              oss << " & ";
           }
           oss << "\\\\" << std::endl;
         }
         oss << "\\end{tabular}" << std::endl;
         oss << "\\end {document}" << std::endl;
-        hppDout (info, oss.str ());
+
+        std::string s = oss.str ();
+        std::string s2 = "";
+        for (int i=0; i < s.size(); i++) {
+          if (s[i] == '_') s2 += "\\_";
+          else s2.push_back(s[i]);
+        }
+        hppDout (info, s2);
       }
 
       bool CrossStateOptimization::contains
@@ -455,7 +537,7 @@ namespace hpp {
       bool CrossStateOptimization::buildOptimizationProblem
       (OptimizationData& d, const graph::Edges_t& transitions) const
       {
-        if (d.N == 0) return true;
+        if (d.N == 0) return true; // TODO: false when there is only a "loop | f"
         d.M_status.resize (constraints_.size (), d.N);
         d.M_status.fill (OptimizationData::ABSENT);
         d.M_rhs.resize (constraints_.size (), d.N);
@@ -581,9 +663,8 @@ namespace hpp {
 
           while(status != Solver_t::SUCCESS && nbTry < nRandomConfigs){
             d.waypoint.col (j) = *(problem()->configurationShooter()->shoot());
-            status = solver.solve
-            (d.waypoint.col (j),
-             constraints::solver::lineSearch::Backtracking ());
+            status = solver.solve (d.waypoint.col (j),
+              constraints::solver::lineSearch::Backtracking ());
             ++nbTry;
           }
           switch (status) {
@@ -634,8 +715,7 @@ namespace hpp {
           else {
             status = t->build (path, d.waypoint.col (i-1), d.waypoint.col (i));
           }
-          if (!status) hppDout(warning, "status wrong " << i << " " << d.N);
-          if (!path) hppDout(warning, "path empty");
+          // This might fail when last argument constraint error is slightly above the threshold
           if (!status || !path) {
             return PathVectorPtr_t();
           }
@@ -653,54 +733,81 @@ namespace hpp {
         GraphSearchData d;
         d.s1 = graph->getState (q1);
         d.s2 = graph->getState (q2);
-        // d.maxDepth = 2;
+
         d.maxDepth = problem_->getParameter
-	  ("CrossStateOptimization/maxDepth").intValue();
+	        ("CrossStateOptimization/maxDepth").intValue();
+        int cnt = 0;
+        std::size_t nTriesForEachPath = problem_->getParameter
+	        ("CrossStateOptimization/nTriesForEachPath").intValue();
 
         // Find
         d.queue1.push (d.addInitState());
         std::size_t idxSol = (d.s1 == d.s2 ? 1 : 0);
-        bool maxDepthReached = findTransitions (d);
 
-        while (!maxDepthReached) {
-          Edges_t transitions = getTransitionList (d, idxSol);
-          while (! transitions.empty()) {
-#ifdef HPP_DEBUG
-            std::ostringstream ss;
-            ss << " Trying solution " << idxSol << ": \n\t";
-            for (std::size_t j = 0; j < transitions.size(); ++j)
-              ss << transitions[j]->name() << ", \n\t";
-            hppDout (info, ss.str());
-#endif // HPP_DEBUG
-            if (!containsLevelSet(transitions)) hppDout(info, "Transitions contains a LevelSetEdge");
-            
-
-            std::size_t nTriesForEachPath = 10;
+        bool maxDepthReached;
+        while (!(maxDepthReached = findTransitions (d))) { // mut
+#ifdef LSE_GET_TRANSITION_LISTS
+          std::vector<Edges_t> transitionss = getTransitionLists (d, idxSol); // const, const
+          cnt += transitionss.size();
+          while (! transitionss.empty()) {
             for (std::size_t nTry = 0; nTry < nTriesForEachPath; nTry++) {
-              OptimizationData optData (problem(), q1, q2, transitions);
-              if (buildOptimizationProblem (optData, transitions)) {
-                if (solveOptimizationProblem (optData)) {
-                  core::PathPtr_t path = buildPath (optData, transitions);
-                  if (path) {
-                    hppDout (warning, " Success, return path, try" << nTry+1);
-                    break;
-                    //return path; // commented this to see other transitions which would have worked
+              for (std::size_t idySol = 0; idySol < transitionss.size(); idySol++) {
+                const Edges_t& transitions = transitionss[idySol];
+#else
+          Edges_t transitions = getTransitionList (d, idxSol); // const, const
+          while (! transitions.empty()) {
+            for (std::size_t nTry = 0; nTry < nTriesForEachPath; nTry++) {
+                std::size_t idySol = 0;
+#endif
+#ifdef HPP_DEBUG
+                std::ostringstream ss;
+                ss << " Trying solution " << idxSol << "-" << idySol <<
+                      ", try " << nTry << ": \n\t";
+                for (std::size_t j = 0; j < transitions.size(); ++j)
+                  ss << transitions[j]->name() << ", \n\t";
+                hppDout (info, ss.str());
+#endif // HPP_DEBUG
+                OptimizationData optData (problem(), q1, q2, transitions);
+                if (buildOptimizationProblem (optData, transitions)) {
+                  if (solveOptimizationProblem (optData)) {
+                    core::PathPtr_t path = buildPath (optData, transitions);
+                    if (path) {
+                      hppDout (warning, " Success for solution " << idxSol <<
+                        "-" << idySol << ", return path, try" << nTry+1);
+                      //return path; // comment to see other transitions which would have worked
+                      idySol = SIZE_MAX-1;
+                      nTry = SIZE_MAX-1;
+                      // we already know this path works so let's move on to the next 
+                    } else {
+                      hppDout (warning, " Failed solution " << idxSol <<
+                        "-" << idySol << " at step 5 (build path)");
+                    }
                   } else {
-                    hppDout (warning, " Failed solution " << idxSol << " at step 5 (build path)");
+                    hppDout (warning, " Failed solution " << idxSol <<
+                      "-" << idySol << " at step 4 (solve opt pb)");
                   }
                 } else {
-                  hppDout (warning, " Failed solution " << idxSol << " at step 4 (solve opt pb)");
+                  hppDout (warning, " Failed solution " << idxSol <<
+                    "-" << idySol << " at step 3 (build opt pb)");
+                  idySol = SIZE_MAX-1;
+                  nTry = SIZE_MAX-1;
+                  // no other LSE alter ego will go further than step 3
                 }
-              } else {
-                hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
               }
+#ifdef LSE_GET_TRANSITION_LISTS
             }
             ++idxSol;
+            transitionss = getTransitionLists(d, idxSol);
+#else
+            ++idxSol;
             transitions = getTransitionList(d, idxSol);
+#endif
           }
-          maxDepthReached = findTransitions (d);
         }
         hppDout (warning, " Max depth reached");
+#ifdef LSE_GET_TRANSITION_LISTS
+        hppDout (warning, cnt << " transitions in total");
+#endif
 
         return core::PathPtr_t ();
       }
@@ -725,6 +832,10 @@ namespace hpp {
             "CrossStateOptimization/nRandomConfigs",
             "Number of random configurations to sample to initialize each "
             "solver.", Parameter((size_type)0)));
+      core::Problem::declareParameter(ParameterDescription(Parameter::INT,
+            "CrossStateOptimization/nTriesForEachPath",
+            "Number of tries to be done for each state path "
+            "solver.", Parameter((size_type)1)));
       HPP_END_PARAMETER_DECLARATION(CrossStateOptimization)
     } // namespace steeringMethod
   } // namespace manipulation

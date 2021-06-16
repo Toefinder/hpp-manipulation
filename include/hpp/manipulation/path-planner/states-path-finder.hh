@@ -20,9 +20,12 @@
 
 # include <hpp/core/fwd.hh>
 # include <hpp/core/path.hh>
-# include <hpp/core/projection-error.hh>
 
+# include <hpp/core/projection-error.hh>
 # include <hpp/core/config-projector.hh>
+
+# include <hpp/core/validation-report.hh>
+# include <hpp/core/config-validations.hh>
 
 # include <hpp/manipulation/config.hh>
 # include <hpp/manipulation/fwd.hh>
@@ -31,6 +34,7 @@
 namespace hpp {
   namespace manipulation {
     namespace pathPlanner {
+      namespace statesPathFinder {
 
       /// \addtogroup path_planner
       /// \{
@@ -97,12 +101,9 @@ namespace hpp {
 	          (const ProblemConstPtr_t& problem);
 
           /// \warning core::Problem will be casted to Problem
-          static StatesPathFinderPtr_t create
-            (const core::ProblemConstPtr_t& problem);      
+          //static StatesPathFinderPtr_t create (const core::ProblemConstPtr_t& problem);      
 
           StatesPathFinderPtr_t copy () const;
-
-          ////// Previously inherited from SteeringMethod
           
           core::ProblemConstPtr_t problem() const
           {
@@ -113,8 +114,19 @@ namespace hpp {
           /// \return a Configurations_t from q1 to q2 if found. An empty
           /// vector if a path could not be built.
           core::Configurations_t compute (ConfigurationIn_t q1,
-                                          ConfigurationIn_t q2) const;
+                                          ConfigurationIn_t q2);
 
+          // access functions for Python interface
+          std::vector<std::string> constraintNamesFromSolverAtWaypoint
+            (std::size_t wp);
+          std::vector<std::string> lastBuiltTransitions() const;
+          std::string displayConfigsSolved () const;
+          Configuration_t configSolved (std::size_t wp) const;
+          bool buildOptimizationProblemFromNames(std::vector<std::string> names);
+          void initWPRandom(std::size_t wp);
+          void initWPNear(std::size_t wp);
+          void initWP(std::size_t wp, ConfigurationIn_t q);
+          int solveStep(std::size_t wp);
 
         protected:
           StatesPathFinder (const ProblemConstPtr_t& problem) :
@@ -145,22 +157,29 @@ namespace hpp {
           bool findTransitions (GraphSearchData& data) const;
 
           /// Step 2 of the algorithm
-          graph::Edges_t getTransitionList (GraphSearchData& data, const std::size_t& i) const;
+          graph::Edges_t getTransitionList (const GraphSearchData& data, const std::size_t& i) const;
 
           /// Step 3 of the algorithm
-          bool buildOptimizationProblem
-            (OptimizationData& d, const graph::Edges_t& transitions) const;
+          bool buildOptimizationProblem (const graph::Edges_t& transitions);
+
+          void initializeRHS (std::size_t j);
+          void postInitializeRHS (std::size_t j);
 
           /// Step 4 of the algorithm
-          bool solveOptimizationProblem (OptimizationData& d) const;
+          bool solveOptimizationProblem ();
 
-          bool checkConstantRightHandSide (OptimizationData& d,
-                                           size_type index) const;
+          bool checkConstantRightHandSide (size_type index);
+          bool checkWaypointRightHandSide (std::size_t ictr, std::size_t jslv) const;
+          bool checkSolverRightHandSide (std::size_t ictr, std::size_t jslv) const;
+          bool checkWaypointRightHandSide (std::size_t jslv) const;
+          bool checkSolverRightHandSide (std::size_t jslv) const;
 
-          core::Configurations_t buildPath (OptimizationData& d, const graph::Edges_t& edges) const;
+          void displayRhsMatrix ();
+          void displayStatusMatrix (const graph::Edges_t& transitions);
+
+          core::Configurations_t buildPath () const;
 
           bool contains (const Solver_t& solver, const ImplicitPtr_t& c) const;
-
 
           /// A pointer to the manipulation problem
           ProblemConstPtr_t problem_;
@@ -174,13 +193,16 @@ namespace hpp {
           /// (constraint, constraint/hold)
           std::map <ImplicitPtr_t, ImplicitPtr_t> sameRightHandSide_;
 
+          mutable OptimizationData* optData_ = nullptr;
+          graph::Edges_t lastBuiltTransitions_;
+
           /// Weak pointer to itself
           StatesPathFinderWkPtr_t weak_;
 
       }; // class StatesPathFinder
       /// \}
       
-
+      } // namespace statesPathFinder
     } // namespace pathPlanner
   } // namespace manipulation
 } // namespace hpp
