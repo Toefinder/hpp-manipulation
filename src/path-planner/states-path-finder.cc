@@ -36,6 +36,8 @@
 
 #include <hpp/core/path-vector.hh>
 #include <hpp/core/configuration-shooter.hh>
+#include <hpp/core/collision-validation.hh>
+#include <hpp/core/collision-validation-report.hh>
 
 #include <hpp/manipulation/graph/edge.hh>
 #include <hpp/manipulation/graph/state.hh>
@@ -45,7 +47,6 @@ namespace hpp {
     namespace pathPlanner {
       namespace statesPathFinder {
 
-      std::size_t idxDeb;
       using Eigen::RowBlockIndices;
       using Eigen::ColBlockIndices;
 
@@ -290,7 +291,6 @@ namespace hpp {
         const std::size_t N, nq, nv;
         std::vector <Solver_t> solvers;
         std::vector <bool> isTargetWaypoint;
-        std::vector <bool> isEdgeShort;
         // Waypoints lying in each intermediate state
         matrix_t waypoint;
         Configuration_t q1, q2;
@@ -324,14 +324,8 @@ namespace hpp {
           }
           assert (transitions.size () > 0);
           isTargetWaypoint.assign(N+1, false);
-          isEdgeShort.assign(N+1, true);
-          for (std::size_t i = 0; i < transitions.size(); i++) {
+          for (std::size_t i = 0; i < transitions.size(); i++)
             isTargetWaypoint[i] = transitions[i]->stateTo()->isWaypoint();
-            std::string name = transitions[i]->name();
-            if (name.find("_34") != std::string::npos)
-              isEdgeShort[i] = false;
-            isEdgeShort[i] = transitions[i]->isShort();
-          } 
         }
       };
 
@@ -527,13 +521,10 @@ namespace hpp {
       (const Solver_t& solver, const ImplicitPtr_t& c) const
       {
         if (solver.contains (c)) return true;
-        /* // TODO remove this when bug fixed
         std::map <ImplicitPtr_t, ImplicitPtr_t>::const_iterator it
           (sameRightHandSide_.find (c));
-        if ((it != sameRightHandSide_.end () &&
-             solver.contains (it->second))) {
+        if (it != sameRightHandSide_.end () && solver.contains (it->second))
           return true;
-        }//*/
         return false;
       }
 
@@ -541,7 +532,7 @@ namespace hpp {
         (const graph::Edges_t& transitions)
       {
         OptimizationData& d = *optData_;
-        if (d.N == 0) return true;
+        if (d.N == 0) return false;
         d.M_status.resize (constraints_.size (), d.N);
         d.M_status.fill (OptimizationData::ABSENT);
         d.M_rhs.resize (constraints_.size (), d.N);
@@ -556,8 +547,7 @@ namespace hpp {
           for (std::size_t j = 0; j < d.N; ++j) {
             // Get transition solver
             const Solver_t& trSolver
-              (transitions [j]->pathConstraint ()->configProjector ()->
-               solver ());
+              (transitions [j]->pathConstraint ()->configProjector ()->solver ());
             if (contains (trSolver, c)) {
               if ((j==0) || d.M_status (index, j-1) ==
                   OptimizationData::EQUAL_TO_INIT) {
@@ -605,14 +595,18 @@ namespace hpp {
         for (std::size_t j = 0; j < d.N; ++j) {
           d.solvers [j] = transitions [j]->
             targetConstraint ()->configProjector ()->solver ();
-          for (std::size_t i = 0; i < constraints_.size (); i++) {
-            if (j > 0 &&
-                d.M_status(i, j-1) == OptimizationData::ABSENT && 
-                d.M_status(i, j) == OptimizationData::EQUAL_TO_GOAL &&
-                !contains(d.solvers[j], constraints_[i])) {
-              d.solvers[j].add(constraints_[i]);
-              hppDout(info, "Adding missing constraint " << constraints_[i]->function().name()
-                                << " to solver for waypoint" << j+1);
+          if (j > 0 && j < d.N-1) {
+            const Solver_t& otherSolver = transitions [j+1]->
+            pathConstraint ()->configProjector ()->solver ();
+            for (std::size_t i = 0; i < constraints_.size (); i++) {
+              if (d.M_status(i, j-1) == OptimizationData::ABSENT && 
+                  d.M_status(i, j) == OptimizationData::EQUAL_TO_GOAL &&
+                  !contains(d.solvers[j], constraints_[i]) &&
+                  otherSolver.contains(constraints_[i])) {
+                d.solvers[j].add(constraints_[i]);
+                hppDout(info, "Adding missing constraint " << constraints_[i]->function().name()
+                                  << " to solver for waypoint" << j+1);
+              }
             }
           }
         }
@@ -680,6 +674,101 @@ namespace hpp {
         return buildOptimizationProblem(transitions);
       }
 
+      void StatesPathFinder::preInitializeRHS(std::size_t j, Configuration_t& q) {
+        OptimizationData& d = *optData_;
+        Solver_t& solver (d.solvers [j]);
+        for (std::size_t i=0; i<constraints_.size (); ++i) {
+          const ImplicitPtr_t& c (constraints_ [i]);
+          bool ok = true;
+          switch (d.M_status ((size_type)i, (size_type)j)) {
+          case OptimizationData::EQUAL_TO_INIT:
+            ok = solver.rightHandSideFromConfig (c, d.q1);
+            break;
+          case OptimizationData::EQUAL_TO_GOAL:
+            ok = solver.rightHandSideFromConfig (c, d.q2);
+            break;
+          case OptimizationData::EQUAL_TO_PREVIOUS:
+            ok = solver.rightHandSideFromConfig (c, q);
+            break;
+          case OptimizationData::ABSENT:
+          default:
+            ;
+          }
+          ok |= contains(solver, constraints_[i]);
+          if(!ok) {
+            std::ostringstream err_msg;
+            err_msg << "\nConstraint " << i << " missing for waypoint " << j+1
+                    << " (" << c->function().name() << ")\n"
+                    << "The constraints in this solver are:\n";
+            for (const std::string& name: constraintNamesFromSolverAtWaypoint(j+1))
+              err_msg << name << "\n";
+            hppDout(warning, err_msg.str());
+          }
+          assert(ok);
+        }
+      }
+
+      bool StatesPathFinder::analyseOptimizationProblem
+        (const graph::Edges_t& transitions)
+      {
+        OptimizationData& d = *optData_;
+        size_type nTriesMax = problem_->getParameter
+          ("StatesPathFinder/maxTriesCollisionAnalysis").intValue();
+        for (std::size_t wp = 1; wp <= d.solvers.size(); wp++) {
+          std::size_t j = wp-1;
+          const Solver_t& solver = d.solvers[j];
+          using namespace core;
+          Solver_t::Status status;
+          size_type tries = 0;
+          Configuration_t q;
+          do {
+            q = *(problem()->configurationShooter()->shoot());
+            preInitializeRHS(j, q);
+            status = solver.solve (q,
+              constraints::solver::lineSearch::Backtracking ());
+          } while ((status != Solver_t::SUCCESS) && (++tries <= nTriesMax));
+          if (tries > nTriesMax) {
+            hppDout(warning, "Collision analysis stopped at WP " << wp
+                              << " because of too many bad solve statuses");
+            return false;
+          }
+          CollisionValidationPtr_t collisionValidations = CollisionValidation::create(problem_->robot());
+          collisionValidations->checkParameterized(true);
+          collisionValidations->computeAllContacts(true);
+          ValidationReportPtr_t validationReport;
+          bool ok = true;
+          if (!collisionValidations->validate (q, validationReport)) {
+            AllCollisionsValidationReportPtr_t allReports = HPP_DYNAMIC_PTR_CAST(
+              AllCollisionsValidationReport, validationReport);
+            assert(allReports);
+            std::size_t nbReports = allReports->collisionReports.size();
+            hppDout(info, wp << " nbReports: " << nbReports);
+            for (std::size_t i = 0; i < nbReports; i++) {
+              CollisionValidationReportPtr_t& report = allReports->collisionReports[i];
+              JointConstPtr_t j1 = report->object1->joint();
+              JointConstPtr_t j2 = report->object2->joint();
+              if (!j1 || !j2) continue;
+              const EdgePtr_t& edge = transitions[wp];
+              RelativeMotion::matrix_type m = edge->relativeMotion();
+              RelativeMotion::RelativeMotionType rmt =
+                m(RelativeMotion::idx(j1), RelativeMotion::idx(j2));
+              hppDout(info, "report " << i << " joints names \n" <<
+                            j1->name() << "\n" << j2->name() << "\n" << rmt);
+              if (rmt == RelativeMotion::RelativeMotionType::Unconstrained)
+                continue;
+              ok = false;
+              break;
+            }
+          }
+          if (!ok) {
+            hppDout(info, "Analysis found a collision at WP " << wp);
+            return false;
+          } 
+          hppDout(info, "Analysis at WP " << wp << " passed after " << tries << " solve tries");
+        }
+        return true;
+      }
+
       void StatesPathFinder::initializeRHS(std::size_t j) {
         OptimizationData& d = *optData_;
         Solver_t& solver (d.solvers [j]);
@@ -701,15 +790,17 @@ namespace hpp {
           default:
             ;
           }
-          continue;
+          ok |= contains(solver, constraints_[i]);
           if(!ok) {
             std::ostringstream err_msg;
-            err_msg << "\nConstraint " << i << " missing in solver " << j+1
-                    << " (" << c->function().name() << ")\n";
+            err_msg << "\nConstraint " << i << " missing for waypoint " << j+1
+                    << " (" << c->function().name() << ")\n"
+                    << "The constraints in this solver are:\n";
+            for (const std::string& name: constraintNamesFromSolverAtWaypoint(j+1))
+              err_msg << name << "\n";
             hppDout(warning, err_msg.str());
-            throw(std::logic_error(err_msg.str()));
           }
-          assert (checkSolverRightHandSide(i, j));
+          assert(ok);
         }
       }
 
@@ -731,6 +822,7 @@ namespace hpp {
         initializeRHS(wp-1);
         optData_->waypoint.col (wp-1) = q;
       }
+
       int StatesPathFinder::solveStep(std::size_t wp) {
         assert(wp >=1 && wp <= (std::size_t) optData_->waypoint.cols());
         std::size_t j = wp-1;
@@ -787,7 +879,7 @@ namespace hpp {
         std::size_t wp = 1; // waypoint index starting at 1 (wp 0 = q1)
 
         while (wp <= d.solvers.size()) {
-          // enough try for a waypoint: backtrack or stop
+          // enough tries for a waypoint: backtrack or stop
           while (nTriesDone[wp] >= nTriesMax) {
             if (wp == 1) {
               if (nTriesDone[wp] < nTriesMax1)
@@ -818,19 +910,15 @@ namespace hpp {
           // Initialize right hand sides, and
           // Choose a starting configuration for the solver.solve method:
           // - from previous waypoint if it's the first time we see this solver
-          //   given current solvers 0 to j-1 and the previous configuration is
-          //   relevant (often)
+          //   given current solvers 0 to j-1
           // - with a random configuration if the other initialization has been
-          //   tried and failed, or when the previous configuration is not a relevant
-          //   dtart (), now try random configs
-          if (nTriesDone[wp] == 0)//d.isEdgeShort[wp])
+          //   tried and failed
+          if (nTriesDone[wp] == 0)
             initWPNear(wp);
           else
             initWPRandom(wp);
 
-          nTriesDone[wp]++;
-          //if (wp > 1) nTriesDone[wp]++;
-          // Backtrack to last state when nTriesDone[j] gets too big
+          nTriesDone[wp]++; // Backtrack to last state when this gets too big
 
           int out = solveStep(wp);
           hppDout(info, "solveStep exit code at WP" << wp << ": " << out);
@@ -874,9 +962,8 @@ namespace hpp {
         GraphSearchData d;
         d.s1 = graph->getState (q1);
         d.s2 = graph->getState (q2);
-        // d.maxDepth = 2;
         d.maxDepth = problem_->getParameter
-	  ("StatesPathFinder/maxDepth").intValue();
+	        ("StatesPathFinder/maxDepth").intValue();
 
         // Find
         d.queue1.push (d.addInitState());
@@ -896,26 +983,23 @@ namespace hpp {
             if (optData_) delete optData_;
             optData_ = new OptimizationData (problem(), q1, q2, transitions);
 
-            //if (idxDeb == 72)// || idxDeb == 86)
-            if (buildOptimizationProblem (transitions)) { // mut, const
+            if (buildOptimizationProblem (transitions)) {
               lastBuiltTransitions_ = transitions;
-              if (solveOptimizationProblem ()) { // mut, const
-                core::Configurations_t path = buildPath (); // const 
-                if (path.size() > 2) {
+              if (analyseOptimizationProblem (transitions)) {
+                if (solveOptimizationProblem ()) { 
+                  core::Configurations_t path = buildPath ();  
                   hppDout (warning, " Success for solution " << idxSol << ", return path");
                   return path;
                 } else {
-                  hppDout (warning, " Failed solution " << idxSol << " at step 5 (build path)");
+                  hppDout (warning, " Failed solution " << idxSol << " at step 5 (solve opt pb)");
                 }
               } else {
-                  hppDout (warning, " Failed solution " << idxSol << " at step 4 (solve opt pb)");
+                hppDout (info, " Failed solution " << idxSol << " at step 4 (analyse opt pb)");
               }
             } else {
-              hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
+              hppDout (info, " Failed solution " << idxSol << " at step 3 (build opt pb)");
             }
-            ++idxSol;
-            idxDeb = idxSol;
-            transitions = getTransitionList(d, idxSol);
+            transitions = getTransitionList(d, ++idxSol);
           }
         }
         hppDout (warning, " Max depth reached");
@@ -926,15 +1010,13 @@ namespace hpp {
         return empty_path;
       }
 
-      // access functions for Python interface
       std::vector<std::string> StatesPathFinder::constraintNamesFromSolverAtWaypoint
         (std::size_t wp)
       {
-        std::size_t nbs = optData_->solvers.size();
-        assert (wp > 0 && wp <= nbs);
+        assert (wp > 0 && wp <= optData_->solvers.size());
         constraints::solver::BySubstitution& solver (optData_->solvers [wp-1]);
         std::vector<std::string> ans;
-        for (std::size_t i=0; i < solver.constraints().size(); i++)
+        for (std::size_t i = 0; i < solver.constraints().size(); i++)
           ans.push_back(solver.constraints()[i]->function().name());
         return ans;
       }
@@ -967,6 +1049,12 @@ namespace hpp {
             "StatesPathFinder/nTriesUntilBacktrack",
             "Number of tries when sampling configurations before backtracking.",
             Parameter((size_type)10)));
+      core::Problem::declareParameter(ParameterDescription(Parameter::INT,
+            "StatesPathFinder/maxTriesCollisionAnalysis",
+            "Number of solve tries before stopping the collision analysis,"
+            "before the actual solving part."
+            "Set to 0 to skip this part of the algorithm.",
+            Parameter((size_type)100)));
       HPP_END_PARAMETER_DECLARATION(StatesPathFinder)
       } // namespace statesPathFinder
     } // namespace pathPlanner

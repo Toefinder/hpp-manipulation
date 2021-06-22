@@ -15,6 +15,7 @@
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
 
+#define HPP_DEBUG
 #ifndef HPP_MANIPULATION_PATH_PLANNER_STATES_PATH_FINDER_HH
 # define HPP_MANIPULATION_PATH_PLANNER_STATES_PATH_FINDER_HH
 
@@ -39,7 +40,7 @@ namespace hpp {
       /// \addtogroup path_planner
       /// \{
 
-      /// Optimization-based steering method.
+      /// Optimization-based path planning method.
       ///
       /// #### Sketch of the method
       ///
@@ -53,8 +54,6 @@ namespace hpp {
       ///   - initialize the optimization problem, as explained below,
       ///   - solve the optimization problem, which gives \f$ p^*_i \f$,
       ///   - in case of failure, continue the loop.
-      ///   - call the Edge::build of each \f$ e_j \f$ for each consecutive
-      ///     \f$ (p^*_i, p^*_{i+1}) \f$.
       ///
       /// #### Problem formulation
       /// Find \f$ (p_i) \f$ such that:
@@ -75,9 +74,17 @@ namespace hpp {
       ///                         equal to value for previous waypoint,
       ///                         equal to value for start configuration,
       ///                         equal to value for end configuration}.
-      /// - method StatesPathFinder::solveOptimizationProblem loops over
-      ///   the waypoint solvers, solves for each waypoint after
-      ///   initializing the right hand sides with the proper values.
+      /// - method analyseOptimizationProblem loops over the waypoint solvers,
+      ///   tests what happens when solving each waypoint after initializing
+      ///   only the right hand sides that are equal to the initial or goal
+      ///   configuraion, and detects if a collision is certain to block any attemps
+      ///   to solve the problem in the solveOptimizationProblem step.
+      /// - method solveOptimizationProblem tries to solve for each waypoint after
+      ///   initializing the right hand sides with the proper values, backtracking
+      ///   to the previous waypoint if the solving failed or a collision is
+      ///   detected a number of times set from the parameter
+      ///   "StatesPathFinder/nTriesUntilBacktrack". If too much backtracking
+      ///   occurs, the method can eventually return false.
       /// - eventually method buildPath build paths between waypoints with
       ///   the constraints of the transition in which the path lies.
       ///
@@ -123,6 +130,8 @@ namespace hpp {
           std::string displayConfigsSolved () const;
           Configuration_t configSolved (std::size_t wp) const;
           bool buildOptimizationProblemFromNames(std::vector<std::string> names);
+
+          // Substeps of method solveOptimizationProblem
           void initWPRandom(std::size_t wp);
           void initWPNear(std::size_t wp);
           void initWP(std::size_t wp, ConfigurationIn_t q);
@@ -160,15 +169,22 @@ namespace hpp {
           graph::Edges_t getTransitionList (const GraphSearchData& data, const std::size_t& i) const;
 
           /// Step 3 of the algorithm
+          bool contains (const Solver_t& solver, const ImplicitPtr_t& c) const;
+          bool checkConstantRightHandSide (size_type index);
           bool buildOptimizationProblem (const graph::Edges_t& transitions);
 
-          void initializeRHS (std::size_t j);
-          void postInitializeRHS (std::size_t j);
-
           /// Step 4 of the algorithm
+          void preInitializeRHS(std::size_t j, Configuration_t& q);
+          bool analyseOptimizationProblem (const graph::Edges_t& transitions);
+
+          /// Step 5 of the algorithm
+          void initializeRHS (std::size_t j);
           bool solveOptimizationProblem ();
 
-          bool checkConstantRightHandSide (size_type index);
+          /// Step 6 of the algorithm
+          core::Configurations_t buildPath () const;
+
+          /// Functions used in assert statements
           bool checkWaypointRightHandSide (std::size_t ictr, std::size_t jslv) const;
           bool checkSolverRightHandSide (std::size_t ictr, std::size_t jslv) const;
           bool checkWaypointRightHandSide (std::size_t jslv) const;
@@ -176,10 +192,6 @@ namespace hpp {
 
           void displayRhsMatrix ();
           void displayStatusMatrix (const graph::Edges_t& transitions);
-
-          core::Configurations_t buildPath () const;
-
-          bool contains (const Solver_t& solver, const ImplicitPtr_t& c) const;
 
           /// A pointer to the manipulation problem
           ProblemConstPtr_t problem_;
