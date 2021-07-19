@@ -772,22 +772,22 @@ namespace hpp {
                   if (solveOptimizationProblem (optData)) {
                     core::PathPtr_t path = buildPath (optData, transitions);
                     if (path) {
-                      hppDout (warning, " Success for solution " << idxSol <<
+                      hppDout (info, " Success for solution " << idxSol <<
                         "-" << idySol << ", return path, try" << nTry+1);
-                      //return path; // comment to see other transitions which would have worked
+                      return path; // comment to see other transitions which would have worked
                       idySol = SIZE_MAX-1;
                       nTry = SIZE_MAX-1;
                       // we already know this path works so let's move on to the next 
                     } else {
-                      hppDout (warning, " Failed solution " << idxSol <<
+                      hppDout (info, " Failed solution " << idxSol <<
                         "-" << idySol << " at step 5 (build path)");
                     }
                   } else {
-                    hppDout (warning, " Failed solution " << idxSol <<
+                    hppDout (info, " Failed solution " << idxSol <<
                       "-" << idySol << " at step 4 (solve opt pb)");
                   }
                 } else {
-                  hppDout (warning, " Failed solution " << idxSol <<
+                  hppDout (info, " Failed solution " << idxSol <<
                     "-" << idySol << " at step 3 (build opt pb)");
                   idySol = SIZE_MAX-1;
                   nTry = SIZE_MAX-1;

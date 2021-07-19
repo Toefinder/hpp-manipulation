@@ -35,7 +35,6 @@
 namespace hpp {
   namespace manipulation {
     namespace pathPlanner {
-      namespace statesPathFinder {
 
       /// \addtogroup path_planner
       /// \{
@@ -107,9 +106,6 @@ namespace hpp {
           static StatesPathFinderPtr_t create
 	          (const ProblemConstPtr_t& problem);
 
-          /// \warning core::Problem will be casted to Problem
-          //static StatesPathFinderPtr_t create (const core::ProblemConstPtr_t& problem);      
-
           StatesPathFinderPtr_t copy () const;
           
           core::ProblemConstPtr_t problem() const
@@ -117,10 +113,10 @@ namespace hpp {
             return problem_;
           }
 
-          /// create a path of configurations between two configurations
+          /// create a vector of configurations between two configurations
           /// \return a Configurations_t from q1 to q2 if found. An empty
           /// vector if a path could not be built.
-          core::Configurations_t compute (ConfigurationIn_t q1,
+          core::Configurations_t computeConfigList (ConfigurationIn_t q1,
                                           ConfigurationIn_t q2);
 
           // access functions for Python interface
@@ -128,7 +124,6 @@ namespace hpp {
             (std::size_t wp);
           std::vector<std::string> lastBuiltTransitions() const;
           std::string displayConfigsSolved () const;
-          Configuration_t configSolved (std::size_t wp) const;
           bool buildOptimizationProblemFromNames(std::vector<std::string> names);
 
           // Substeps of method solveOptimizationProblem
@@ -136,6 +131,16 @@ namespace hpp {
           void initWPNear(std::size_t wp);
           void initWP(std::size_t wp, ConfigurationIn_t q);
           int solveStep(std::size_t wp);
+          Configuration_t configSolved (std::size_t wp) const;
+
+          /// Step 7 of the algorithm
+          core::PathVectorPtr_t pathFromConfigList (std::size_t i) const;
+
+          /// deletes from memory the latest working states list, which is used to
+          /// resume finding solutions from that list in case of failure at a
+          /// later step.
+          void reset();
+          core::PathVectorPtr_t buildPath (ConfigurationIn_t q1, ConfigurationIn_t q2);
 
         protected:
           StatesPathFinder (const ProblemConstPtr_t& problem) :
@@ -182,7 +187,7 @@ namespace hpp {
           bool solveOptimizationProblem ();
 
           /// Step 6 of the algorithm
-          core::Configurations_t buildPath () const;
+          core::Configurations_t buildConfigList () const;
 
           /// Functions used in assert statements
           bool checkWaypointRightHandSide (std::size_t ictr, std::size_t jslv) const;
@@ -206,6 +211,7 @@ namespace hpp {
           std::map <ImplicitPtr_t, ImplicitPtr_t> sameRightHandSide_;
 
           mutable OptimizationData* optData_ = nullptr;
+          std::size_t idxSol_ = 0;
           graph::Edges_t lastBuiltTransitions_;
 
           /// Weak pointer to itself
@@ -214,9 +220,8 @@ namespace hpp {
       }; // class StatesPathFinder
       /// \}
       
-      } // namespace statesPathFinder
     } // namespace pathPlanner
   } // namespace manipulation
 } // namespace hpp
 
-#endif // HPP_MANIPULATION_STEERING_METHOD_MULTIPLE_STATE_OPTIMIZATION_HH
+#endif // HPP_MANIPULATION_PATH_PLANNER_STATES_PATH_FINDER_HH
