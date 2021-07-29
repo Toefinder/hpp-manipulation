@@ -48,7 +48,6 @@
 #include "hpp/manipulation/device.hh"
 #include "hpp/manipulation/handle.hh"
 #include "hpp/manipulation/graph/graph.hh"
-#include "hpp/manipulation/path-planner/rmr-star.hh"
 #include "hpp/manipulation/manipulation-planner.hh"
 #include "hpp/manipulation/roadmap.hh"
 #include "hpp/manipulation/constraint-set.hh"
@@ -58,6 +57,8 @@
 #include "hpp/manipulation/path-optimization/random-shortcut.hh"
 #include "hpp/manipulation/path-optimization/enforce-transition-semantic.hh"
 #include "hpp/manipulation/path-planner/end-effector-trajectory.hh"
+#include "hpp/manipulation/path-planner/states-path-finder.hh"
+#include "hpp/manipulation/path-planner/in-state-path.hh"
 #include "hpp/manipulation/problem-target/state.hh"
 #include "hpp/manipulation/steering-method/cross-state-optimization.hh"
 #include "hpp/manipulation/steering-method/graph.hh"
@@ -119,8 +120,9 @@ namespace hpp {
       robotType ("hpp::manipulation::Device");
 
       pathPlanners.add ("M-RRT", ManipulationPlanner::create);
-      pathPlanners.add ("RMR*", pathPlanner::RMRStar::create);
       pathPlanners.add ("EndEffectorTrajectory", pathPlanner::EndEffectorTrajectory::createWithRoadmap);
+      pathPlanners.add ("StatesPathFinder", pathPlanner::StatesPathFinder::createWithRoadmap);
+      pathPlanners.add ("InStatePath", pathPlanner::InStatePath::createWithRoadmap);
 
       pathValidations.add ("Graph-Discretized"                      , createDiscretizedCollisionGraphPathValidation);
       pathValidations.add ("Graph-DiscretizedCollision"             , createDiscretizedCollisionGraphPathValidation);
