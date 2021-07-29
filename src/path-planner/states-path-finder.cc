@@ -1,6 +1,7 @@
-// Copyright (c) 2017, Joseph Mirabel
+// Copyright (c) 2021, Joseph Mirabel
 // Authors: Joseph Mirabel (joseph.mirabel@laas.fr),
 //          Florent Lamiraux (florent.lamiraux@laas.fr)
+//          Alexandre Thiault (athiault@laas.fr)
 //
 // This file is part of hpp-manipulation.
 // hpp-manipulation is free software: you can redistribute it
@@ -20,9 +21,9 @@
 #include <map>
 #include <queue>
 #include <vector>
-#include <iomanip>
 
 #include <hpp/util/exception-factory.hh>
+#include <hpp/util/timer.hh>
 
 #include <pinocchio/multibody/model.hpp>
 
@@ -41,6 +42,7 @@
 
 #include <hpp/manipulation/graph/edge.hh>
 #include <hpp/manipulation/graph/state.hh>
+#include <hpp/manipulation/roadmap.hh>
 
 #include <hpp/manipulation/path-planner/in-state-path.hh>
 
@@ -60,11 +62,45 @@ namespace hpp {
       using graph::LockedJoints_t;
       using graph::segments_t;
 
+
       StatesPathFinderPtr_t StatesPathFinder::create (
-          const ProblemConstPtr_t& problem)
+          const core::ProblemConstPtr_t& problem)
       {
-        StatesPathFinderPtr_t shPtr(new StatesPathFinder (problem));
-        shPtr->init(shPtr);
+        StatesPathFinder* ptr;
+        RoadmapPtr_t r = Roadmap::create(problem->distance(), problem->robot());
+        try {
+          ProblemConstPtr_t p(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
+          ptr = new StatesPathFinder (p, r);
+        } catch (std::exception&) {
+          throw std::invalid_argument
+            ("The problem must be of type hpp::manipulation::Problem.");
+        }
+        StatesPathFinderPtr_t shPtr (ptr);
+        ptr->init (shPtr);
+        return shPtr;
+      }
+
+      StatesPathFinderPtr_t StatesPathFinder::createWithRoadmap (
+          const core::ProblemConstPtr_t& problem,
+          const core::RoadmapPtr_t& roadmap)
+      {
+        StatesPathFinder* ptr;
+        core::RoadmapPtr_t r2 = roadmap; // unused
+        RoadmapPtr_t r;
+        try {
+          ProblemConstPtr_t p(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
+          r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
+          ptr = new StatesPathFinder (p, r);
+        } catch (std::exception&) {
+          if (!r)
+            throw std::invalid_argument
+              ("The roadmap must be of type hpp::manipulation::Roadmap.");
+          else
+            throw std::invalid_argument
+              ("The problem must be of type hpp::manipulation::Problem.");
+        }
+        StatesPathFinderPtr_t shPtr (ptr);
+        ptr->init (shPtr);
         return shPtr;
       }
 
@@ -1013,10 +1049,10 @@ namespace hpp {
 
               if (buildOptimizationProblem (transitions)) {
                 lastBuiltTransitions_ = transitions;
-                if (analyseOptimizationProblem (transitions)) {
+                if (skipColAnalysis_ || analyseOptimizationProblem (transitions)) {
                   if (solveOptimizationProblem ()) { 
                     core::Configurations_t path = buildConfigList ();  
-                    hppDout (warning, " Success for solution " << idxSol << ", return path");
+                    hppDout (warning, " Solution " << idxSol << ": solved configurations list");
                     return path;
                   } else {
                     hppDout (warning, " Failed solution " << idxSol << " at step 5 (solve opt pb)");
@@ -1025,7 +1061,7 @@ namespace hpp {
                   hppDout (warning, " Failed solution " << idxSol << " at step 4 (analyse opt pb)");
                 }
               } else {
-                hppDout (warning, " Failed solution " << idxSol << " at step 3 (build opt pb)");
+                hppDout (info, " Failed solution " << idxSol << " at step 3 (build opt pb)");
               }
             } // if (idxSol >= idxSol_)
             transitions = getTransitionList(d, ++idxSol);
@@ -1046,11 +1082,11 @@ namespace hpp {
         try {
           const Edges_t& transitions = lastBuiltTransitions_;
           InStatePathPtr_t planner = InStatePath::create(problem_);
-          //planner->optimizerTypes.push_back("RandomShortcut");
-          // TODO uncomment when RandomShortcut is fixed 
-          planner->plannerType = "DiffusingPlanner";//"kPRM*","DiffusingPlanner","BiRRT*"
-          planner->maxIterPathPlanning = 1000;
-          planner->resetRoadmap = true;
+          planner->addOptimizerType("Graph-RandomShortcut");
+          planner->plannerType("DiffusingPlanner");
+          planner->maxIterPlanner(1000);
+          planner->timeOutPlanner(5.0);
+          planner->resetRoadmap(true);
           ConfigurationPtr_t q1 (new Configuration_t (configSolved(i)));
           ConfigurationPtr_t q2 (new Configuration_t (configSolved(i+1)));
           hppDout(info, 3);
@@ -1063,8 +1099,8 @@ namespace hpp {
         } catch(const std::exception&(e)) {
           std::ostringstream oss;
           oss << "Error " << e.what() << "\n";
-          oss << "Solution \"latest\":\nFailed to build path at edge " << i << " with constraints:";
-          oss << "\n" << lastBuiltTransitions_[i]->pathConstraint()->name();
+          oss << "Solution \"latest\":\nFailed to build path at edge " << i << ": ";
+          oss << lastBuiltTransitions_[i]->pathConstraint()->name();
           hppDout(warning, oss.str());
           core::PathVectorPtr_t empty;
           return empty;
@@ -1078,6 +1114,8 @@ namespace hpp {
           optData_ = nullptr;
         }
         lastBuiltTransitions_.clear();
+        idxConfigList_ = 0;
+        nTryConfigList_ = 0;
       }
 
       core::PathVectorPtr_t StatesPathFinder::buildPath (ConfigurationIn_t q1, ConfigurationIn_t q2)
@@ -1088,27 +1126,25 @@ namespace hpp {
 	        ("StatesPathFinder/maxTriesBuildPath").intValue();
 
         InStatePathPtr_t planner = InStatePath::create(problem_);
-        //planner->optimizerTypes.push_back("RandomShortcut");
-        // TODO uncomment when RandomShortcut is fixed 
-        planner->plannerType = "DiffusingPlanner";//"kPRM*","DiffusingPlanner","BiRRT*"
-        planner->maxIterPathPlanning = 1000;
-        planner->resetRoadmap = true;
+        planner->addOptimizerType("Graph-RandomShortcut"); 
+        planner->plannerType("DiffusingPlanner");
+        planner->maxIterPlanner(1000);
+        planner->timeOutPlanner(5.0);
+        planner->resetRoadmap(true);
 
         while (true) {
+          skipColAnalysis_ = (nTryConfigList_ >= 1); // already passed, don't redo it
           core::Configurations_t configList = computeConfigList(q1, q2);
-          if (configList.size() <= 1) // max depth reached
-            break;
+          if (configList.size() <= 1) {// max depth reached
+            reset();
+            continue;
+          }
           const Edges_t& transitions = lastBuiltTransitions_;
           std::size_t i = 0;
           try {
-            ConfigurationPtr_t q1 (new Configuration_t (configSolved(i)));
-            ConfigurationPtr_t q2 (new Configuration_t (configSolved(i+1)));
-            planner->setEdge(transitions[i]);
-            planner->setInit(q1);
-            planner->setGoal(q2);
-            hppDout(info, "calling InStatePath::solve for transition " << i);
-            core::PathVectorPtr_t ans(planner->solve());
-            for (i = 1; i < configList.size()-1; i++) {
+            core::PathVectorPtr_t ans = core::PathVector::create (
+              problem()->robot()->configSize(), problem()->robot()->numberDof());
+            for (i = 0; i < configList.size()-1; i++) {
               ConfigurationPtr_t q1 (new Configuration_t (configSolved(i)));
               ConfigurationPtr_t q2 (new Configuration_t (configSolved(i+1)));
               planner->setEdge(transitions[i]);
@@ -1117,6 +1153,8 @@ namespace hpp {
               hppDout(info, "calling InStatePath::solve for transition " << i);
               ans->concatenate(planner->solve());
             }
+            hppDout(warning, "Solution " << idxSol_ << ": Success"
+                    << "\n-----------------------------------------------");
             return ans;
           } catch(const std::exception&(e)) {
             std::ostringstream oss;
@@ -1124,7 +1162,8 @@ namespace hpp {
             oss << "Solution " << idxSol_ << ": Failed to build path at edge " << i << ": ";
             oss << lastBuiltTransitions_[i]->name();
             hppDout(warning, oss.str());
-            break; // comment this to keep trying other solutions
+
+            // Retry nTryMax times to build another solution for the same states list
             if (++nTry >= nTryMax) {
               nTry = 0;
               idxSol_++;
@@ -1133,6 +1172,134 @@ namespace hpp {
         }
         core::PathVectorPtr_t empty;
         return empty;
+      }
+
+      void StatesPathFinder::startSolve ()
+      {
+        assert(problem_);
+        q1_ = problem_->initConfig();
+        assert(q1_);
+        core::Configurations_t q2s = problem_->goalConfigs();
+        assert(q2s.size());
+        q2_ =  q2s[0];
+
+        reset();
+
+        planner_ = InStatePath::create(problem_);
+        planner_->addOptimizerType("Graph-RandomShortcut");
+        planner_->plannerType("DiffusingPlanner");
+        planner_->maxIterPlanner(1000);
+        planner_->timeOutPlanner(2.0);
+        planner_->resetRoadmap(true);
+      }
+
+      void StatesPathFinder::oneStep ()
+      {
+        //TODO : le InStatePlanner x BiRRT* causes discontinuities, possible
+        //       to see them and resolve until there's not but it's not normal
+        if (idxConfigList_ == 0) {
+          solution_ = core::PathVector::create (
+            problem()->robot()->configSize(), problem()->robot()->numberDof());
+          skipColAnalysis_ = (nTryConfigList_ >= 1); // already passed, don't redo it
+          configList_ = computeConfigList(*q1_, *q2_);
+          if (configList_.size() <= 1) { // max depth reached
+            reset();
+            return;
+          }
+        }
+
+        try {
+          const Edges_t& transitions = lastBuiltTransitions_;
+          ConfigurationPtr_t q1 (new Configuration_t (configSolved(idxConfigList_)));
+          ConfigurationPtr_t q2 (new Configuration_t (configSolved(idxConfigList_+1)));
+          planner_->setEdge(transitions[idxConfigList_]);
+          planner_->setInit(q1);
+          planner_->setGoal(q2);
+          
+          hppDout(info, "calling InStatePath::solve for transition " << idxConfigList_);
+          
+          core::PathVectorPtr_t aux = planner_->solve();
+          for (std::size_t r = 0; r < aux->numberPaths()-1; r++)
+            assert(aux->pathAtRank(r)->end() == aux->pathAtRank(r+1)->initial());
+          /*
+          while (true) {
+            bool ok = true;
+            for (std::size_t r = 0; r < aux->numberPaths()-1; r++) {
+              if (aux->pathAtRank(r)->end() != aux->pathAtRank(r+1)->initial()) {
+                hppDout(warning, "discontinuity at transition " << idxConfigList_
+                        << " between configs "
+                        << "\nq1=" << pinocchio::displayConfig(aux->pathAtRank(r)->end())
+                        << "\nq2=" << pinocchio::displayConfig(aux->pathAtRank(r+1)->initial())
+                        << "\nafter rank r=" << r << " out of " << aux->numberPaths() 
+                );
+                ok = false;
+                break;
+              }
+            }
+            if (ok) break;
+            break; // remove this
+            aux = planner_->solve();
+          } */
+          solution_->concatenate(aux);
+
+          idxConfigList_++;
+          if (idxConfigList_ == configList_.size()-1) {
+            hppDout(warning, "Solution " << idxSol_ << ": Success"
+                    << "\n-----------------------------------------------");
+            //solution_ = aux;
+            solved_ = true;
+          }
+
+        } catch(const std::exception&(e)) {
+          std::ostringstream oss;
+          oss << "Error " << e.what() << "\n";
+          oss << "Solution " << idxSol_ << ": Failed to build path at edge " << idxConfigList_ << ": ";
+          oss << lastBuiltTransitions_[idxConfigList_]->name();
+          hppDout(warning, oss.str());
+
+          idxConfigList_ = 0;
+          // Retry nTryMax times to build another solution for the same states list
+          size_type nTryMax = problem_->getParameter
+              ("StatesPathFinder/maxTriesBuildPath").intValue();
+          if (++nTryConfigList_ >= nTryMax) {
+            nTryConfigList_ = 0;
+            idxSol_++;
+          }
+        }
+      }
+
+      core::PathVectorPtr_t StatesPathFinder::solve ()
+      {
+        /*
+        assert(problem_);
+        q1_ = problem_->initConfig();
+        assert(q1_);
+        core::Configurations_t q2s = problem_->goalConfigs();
+        assert(q2s.size());
+        q2_ =  q2s[0];
+        return buildPath(*q1_, *q2_);
+        /*/
+
+        namespace bpt = boost::posix_time;
+
+        interrupt_ = false;
+        solved_ = false;
+        unsigned long int nIter (0);
+        startSolve ();
+        if (interrupt_) throw std::runtime_error ("Interruption");
+        while (!solved_) {
+          // Execute one step
+          hppStartBenchmark(ONE_STEP);
+          oneStep ();
+          hppStopBenchmark(ONE_STEP);
+          hppDisplayBenchmark(ONE_STEP);
+
+          ++nIter;
+          //solved = problem()->target()->reached (roadmap());
+          if (interrupt_) throw std::runtime_error ("Interruption");
+        }
+        return solution_;
+        //*/
       }
 
       std::vector<std::string> StatesPathFinder::constraintNamesFromSolverAtWaypoint
@@ -1161,7 +1328,7 @@ namespace hpp {
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
             "StatesPathFinder/maxDepth",
             "Maximum number of transitions to look for.",
-            Parameter((size_type)6)));
+            Parameter((size_type)std::numeric_limits<unsigned long int>::infinity())));
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
             "StatesPathFinder/maxIteration",
             "Maximum number of iterations of the Newton Raphson algorithm.",
@@ -1180,7 +1347,7 @@ namespace hpp {
             "Number of solve tries before stopping the collision analysis,"
             "before the actual solving part."
             "Set to 0 to skip this part of the algorithm.",
-            Parameter((size_type)20)));
+            Parameter((size_type)100)));
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
             "StatesPathFinder/maxTriesBuildPath",
             "Number of solutions with a given states list to try to build a"

@@ -1,6 +1,7 @@
 // Copyright (c) 2017, Joseph Mirabel
 // Authors: Joseph Mirabel (joseph.mirabel@laas.fr),
 //          Florent Lamiraux (florent.lamiraux@laas.fr)
+//          Alexandre Thiault (athiault@laas.fr)
 //
 // This file is part of hpp-manipulation.
 // hpp-manipulation is free software: you can redistribute it
@@ -27,6 +28,8 @@
 
 # include <hpp/core/validation-report.hh>
 # include <hpp/core/config-validations.hh>
+
+# include <hpp/core/path-planner.hh>
 
 # include <hpp/manipulation/config.hh>
 # include <hpp/manipulation/fwd.hh>
@@ -95,7 +98,7 @@ namespace hpp {
       /// away from each other if the transition between those state does
       /// not contain the grasp complement constraint. The same holds
       /// between placement and pre-placement.
-      class HPP_MANIPULATION_DLLAPI StatesPathFinder
+      class HPP_MANIPULATION_DLLAPI StatesPathFinder : public core::PathPlanner
       {
 
         public:
@@ -103,8 +106,12 @@ namespace hpp {
 
         virtual ~StatesPathFinder () {};
 
-          static StatesPathFinderPtr_t create
-	          (const ProblemConstPtr_t& problem);
+          static StatesPathFinderPtr_t create (
+            const core::ProblemConstPtr_t& problem);
+            
+          static StatesPathFinderPtr_t createWithRoadmap (
+            const core::ProblemConstPtr_t& problem,
+            const core::RoadmapPtr_t& roadmap);
 
           StatesPathFinderPtr_t copy () const;
           
@@ -142,14 +149,22 @@ namespace hpp {
           void reset();
           core::PathVectorPtr_t buildPath (ConfigurationIn_t q1, ConfigurationIn_t q2);
 
+          virtual void startSolve();
+          virtual void oneStep();
+          virtual core::PathVectorPtr_t solve ();
+
         protected:
-          StatesPathFinder (const ProblemConstPtr_t& problem) :
-            problem_ (problem), sameRightHandSide_ (), weak_ ()
+          StatesPathFinder (const core::ProblemConstPtr_t& problem,
+                const core::RoadmapPtr_t&) :
+            PathPlanner(problem),
+            problem_ (HPP_STATIC_PTR_CAST(const manipulation::Problem, problem)),
+            sameRightHandSide_ (), weak_ ()
           {
             gatherGraphConstraints ();
           }
 
           StatesPathFinder (const StatesPathFinder& other) :
+            PathPlanner(other.problem_),
             problem_ (other.problem_), constraints_ (), index_ (other.index_),
             sameRightHandSide_ (other.sameRightHandSide_),  weak_ ()
           {}
@@ -213,6 +228,17 @@ namespace hpp {
           mutable OptimizationData* optData_ = nullptr;
           std::size_t idxSol_ = 0;
           graph::Edges_t lastBuiltTransitions_;
+
+          bool skipColAnalysis_ = false;
+
+          // Variables used across several calls to oneStep
+          ConfigurationPtr_t q1_, q2_;
+          core::Configurations_t configList_;
+          std::size_t idxConfigList_ = 0;
+          size_type nTryConfigList_ = 0;
+          InStatePathPtr_t planner_;
+          core::PathVectorPtr_t solution_;
+          bool solved_ = false, interrupt_ = false;
 
           /// Weak pointer to itself
           StatesPathFinderWkPtr_t weak_;

@@ -1,5 +1,7 @@
-// Copyright (c) 2021, 
-// Authors: 
+// Copyright (c) 2021, Joseph Mirabel
+// Authors: Joseph Mirabel (joseph.mirabel@laas.fr),
+//          Florent Lamiraux (florent.lamiraux@laas.fr)
+//          Alexandre Thiault (athiault@laas.fr)
 //
 // This file is part of hpp-manipulation.
 // hpp-manipulation is free software: you can redistribute it
@@ -13,19 +15,12 @@
 // General Lesser Public License for more details.  You should have
 // received a copy of the GNU Lesser General Public License along with
 // hpp-manipulation. If not, see <http://www.gnu.org/licenses/>.
-#define HPP_DEBUG
-#include <hpp/manipulation/path-planner/in-state-path.hh>
 
-#include <map>
-#include <queue>
-#include <vector>
+#include <hpp/manipulation/path-planner/in-state-path.hh>
 
 #include <hpp/util/exception-factory.hh>
 
-#include <pinocchio/multibody/model.hpp>
-
 #include <hpp/pinocchio/configuration.hh>
-#include <hpp/pinocchio/joint-collection.hh>
 
 #include <hpp/core/path-vector.hh>
 #include <hpp/core/roadmap.hh>
@@ -39,18 +34,54 @@
 #include <hpp/core/path-optimization/simple-shortcut.hh>
 #include <hpp/core/path-optimization/partial-shortcut.hh>
 #include <hpp/core/path-optimization/simple-time-parameterization.hh>
+#include <hpp/manipulation/path-optimization/random-shortcut.hh>
 
 #include <hpp/manipulation/graph/edge.hh>
+#include <hpp/manipulation/roadmap.hh>
 
 
 namespace hpp {
   namespace manipulation {
     namespace pathPlanner {
 
-      InStatePathPtr_t InStatePath::create (const ProblemConstPtr_t &problem)
+      InStatePathPtr_t InStatePath::create (
+          const core::ProblemConstPtr_t& problem)
       {
-        InStatePathPtr_t shPtr(new InStatePath(problem));
-        shPtr->init(shPtr);
+        InStatePath* ptr;
+        RoadmapPtr_t r = Roadmap::create(problem->distance(), problem->robot());
+        try {
+          ProblemConstPtr_t p(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
+          ptr = new InStatePath (p, r);
+        } catch (std::exception&) {
+          throw std::invalid_argument
+            ("The problem must be of type hpp::manipulation::Problem.");
+        }
+        InStatePathPtr_t shPtr (ptr);
+        ptr->init (shPtr);
+        return shPtr;
+      }
+
+      InStatePathPtr_t InStatePath::createWithRoadmap (
+          const core::ProblemConstPtr_t& problem,
+          const core::RoadmapPtr_t& roadmap)
+      {
+        InStatePath* ptr;
+        core::RoadmapPtr_t r2 = roadmap;
+        RoadmapPtr_t r;
+        try {
+          ProblemConstPtr_t p(HPP_DYNAMIC_PTR_CAST(const Problem, problem));
+          r = HPP_DYNAMIC_PTR_CAST (Roadmap, r2);
+          ptr = new InStatePath (p, r);
+        } catch (std::exception&) {
+          if (!r)
+            throw std::invalid_argument
+              ("The roadmap must be of type hpp::manipulation::Roadmap.");
+          else
+            throw std::invalid_argument
+              ("The problem must be of type hpp::manipulation::Problem.");
+        }
+        InStatePathPtr_t shPtr (ptr);
+        ptr->init (shPtr);
         return shPtr;
       }
 
@@ -62,32 +93,48 @@ namespace hpp {
         return shPtr;
       }
 
+      void InStatePath::maxIterPlanner(const unsigned long& maxiter)
+      {
+        maxIterPathPlanning_ = maxiter;
+      }
+
+      void InStatePath::timeOutPlanner(const double& timeout)
+      {
+        timeOutPathPlanning_ = timeout;
+      }
+
+      void InStatePath::resetRoadmap(const bool& resetroadmap)
+      {
+        resetRoadmap_ = resetroadmap;
+      }
+
+      void InStatePath::plannerType(const std::string& plannertype)
+      {
+        plannerType_ = plannertype;
+      }
+      
+      void InStatePath::addOptimizerType(const std::string& opttype)
+      {
+        optimizerTypes_.push_back(opttype);
+      }
+      
+      void InStatePath::resetOptimizerTypes()
+      {
+        optimizerTypes_.clear();
+      }
+
       void InStatePath::setEdge (const graph::EdgePtr_t& edge)
       {
         constraints_ = edge->pathConstraint();
-        try {
-          cproblem_->pathValidation(edge->pathValidation());
-          hppDout(info, "a");
-        } catch(const std::runtime_error&(e)) {
-          hppDout(info, "b");
-          //TODO1 comprendre pourquoi ce truc des pools
-          //TODO2 comprendre aussi les Failed to apply constraints in StraightPath::extract
-          assert ((std::string) (e.what()) == "Cannot free pool when some objects are in use.");
-        }
+        cproblem_->pathValidation(edge->pathValidation());
         cproblem_->constraints(constraints_);
         cproblem_->steeringMethod(edge->steeringMethod());
-        try {
-          cproblem_->filterCollisionPairs();
-          hppDout(info, "c");
-        } catch(const std::runtime_error&(e)) {
-          hppDout(info, "d");
-          assert ((std::string) (e.what()) == "Cannot free pool when some objects are in use.");
-        }
       }
 
       void InStatePath::setInit (const ConfigurationPtr_t& qinit)
       {
-        assert(constraints_);
+        if (!constraints_)
+          throw std::logic_error("Use setEdge before setInit and setGoal");
         constraints_->configProjector()->rightHandSideFromConfig(*qinit);
         cproblem_->initConfig(qinit);
         cproblem_->resetGoalConfigs();
@@ -95,7 +142,8 @@ namespace hpp {
 
       void InStatePath::setGoal (const ConfigurationPtr_t& qgoal)
       {
-        assert(constraints_);
+        if (!constraints_)
+          throw std::logic_error("Use setEdge before setInit and setGoal");
         ConfigurationPtr_t qgoalc (new Configuration_t (*qgoal));
         constraints_->apply(*qgoalc);
         assert((*qgoal-*qgoalc).isZero());
@@ -103,39 +151,49 @@ namespace hpp {
         cproblem_->addGoalConfig(qgoal);
       }
 
-      core::PathVectorPtr_t InStatePath::solve() {
-
-        if (resetRoadmap || !roadmap_)
+      core::PathVectorPtr_t InStatePath::solve()
+      {
+        if (!constraints_)
+          throw std::logic_error("Use setEdge, setInit and setGoal before solve");
+        if (resetRoadmap_ || !roadmap_)
           roadmap_ = core::Roadmap::create (cproblem_->distance(), problem_->robot());
         
-        core::PathPlannerPtr_t planner_;
-        if (plannerType == "kPRM*")
-          planner_ = core::pathPlanner::kPrmStar::createWithRoadmap(cproblem_, roadmap_);
-        else if (plannerType == "DiffusingPlanner")
-          planner_ = core::DiffusingPlanner::createWithRoadmap(cproblem_, roadmap_);
-        else if (plannerType == "BiRRT*")
-          planner_ = core::BiRRTPlanner::createWithRoadmap(cproblem_, roadmap_);
-        else
-          planner_ = core::BiRRTPlanner::createWithRoadmap(cproblem_, roadmap_);
-        if (maxIterPathPlanning)
-            planner_->maxIterations(maxIterPathPlanning);
-        if (timeOutPathPlanning)
-            planner_->timeOut(timeOutPathPlanning);
-        if (!maxIterPathPlanning && !timeOutPathPlanning)
-            planner_->stopWhenProblemIsSolved(true);
-        core::PathVectorPtr_t path = planner_->solve();
+        core::PathPlannerPtr_t planner;
+        // TODO: BiRRT* does not work properly:
+        //     - discontinuities due to an algorithmic mistake involving qProj_
+        //     - not using path projectors, it should
+        if (plannerType_ == "kPRM*")
+          planner = core::pathPlanner::kPrmStar::createWithRoadmap(cproblem_, roadmap_);
+        else if (plannerType_ == "DiffusingPlanner")
+          planner = core::DiffusingPlanner::createWithRoadmap(cproblem_, roadmap_);
+        else if (plannerType_ == "BiRRT*")
+          planner = core::BiRRTPlanner::createWithRoadmap(cproblem_, roadmap_);
+        else {
+          hppDout(warning, "Unknown planner type specified. Setting to default DiffusingPlanner");
+          planner = core::DiffusingPlanner::createWithRoadmap(cproblem_, roadmap_);
+        }
+        if (maxIterPathPlanning_)
+            planner->maxIterations(maxIterPathPlanning_);
+        if (timeOutPathPlanning_)
+          planner->timeOut(timeOutPathPlanning_);
+        if (!maxIterPathPlanning_ && !timeOutPathPlanning_)
+            planner->stopWhenProblemIsSolved(true);
+        core::PathVectorPtr_t path = planner->solve();
         
-        for (const std::string& optType: optimizerTypes) {
-          using namespace core::pathOptimization;
+        for (const std::string& optType: optimizerTypes_) {
+          namespace manipOpt = pathOptimization;
+          namespace coreOpt = core::pathOptimization;
           PathOptimizerPtr_t optimizer;
           if (optType == "RandomShortcut")
-            optimizer = RandomShortcut::create(problem_);
+            optimizer = coreOpt::RandomShortcut::create(problem_);
           else if (optType == "SimpleShortcut")
-            optimizer = SimpleShortcut::create(problem_);
+            optimizer = coreOpt::SimpleShortcut::create(problem_);
           else if (optType == "PartialShortcut")
-            optimizer = PartialShortcut::create(problem_);
+            optimizer = coreOpt::PartialShortcut::create(problem_);
           else if (optType == "SimpleTimeParameterization")
-            optimizer = SimpleTimeParameterization::create(problem_);
+            optimizer = coreOpt::SimpleTimeParameterization::create(problem_);
+          else if (optType == "Graph-RandomShortcut")
+            optimizer = manipOpt::RandomShortcut::create(problem_);
           else
             continue;
           try {

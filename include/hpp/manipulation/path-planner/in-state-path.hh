@@ -1,5 +1,7 @@
-// Copyright (c) 2021, 
-// Authors: 
+// Copyright (c) 2021, Joseph Mirabel
+// Authors: Joseph Mirabel (joseph.mirabel@laas.fr),
+//          Florent Lamiraux (florent.lamiraux@laas.fr)
+//          Alexandre Thiault (athiault@laas.fr)
 //
 // This file is part of hpp-manipulation.
 // hpp-manipulation is free software: you can redistribute it
@@ -34,41 +36,47 @@ namespace hpp {
       /// \{
 
       /// 
-      ///
-      /// #### Sketch of the method
-      ///
-      /// #### Problem resolution
-      ///
-      /// #### Current status
-      ///
+      /// Path planner designed to build a path between two configurations
+      /// on the same leaf of a given state graph edge
       class HPP_MANIPULATION_DLLAPI InStatePath : public core::PathPlanner
       {
         public:
           virtual ~InStatePath()
           {}
 
-          static InStatePathPtr_t create (const ProblemConstPtr_t& problem);
+          static InStatePathPtr_t create (
+            const core::ProblemConstPtr_t& problem);
+            
+          static InStatePathPtr_t createWithRoadmap (
+            const core::ProblemConstPtr_t& problem,
+            const core::RoadmapPtr_t& roadmap);
 
           InStatePathPtr_t copy () const;
 
+          void maxIterPlanner(const unsigned long& maxiter);
+          void timeOutPlanner(const double& timeout);
+          void resetRoadmap(const bool& resetroadmap);
+          void plannerType(const std::string& plannertype);
+          void addOptimizerType(const std::string& opttype);
+          void resetOptimizerTypes();
+
+          /// Set the edge along which q_init and q_goal will be linked.
+          /// Use setEdge before setInit and setGoal.
           void setEdge (const graph::EdgePtr_t& edge);
           void setInit (const ConfigurationPtr_t& q);
           void setGoal (const ConfigurationPtr_t& q);
 
-          virtual void oneStep() {}
+          virtual void oneStep()
+          {}
           virtual core::PathVectorPtr_t solve();
 
-          int maxIterPathPlanning = 0;
-          double timeOutPathPlanning = 0;
-          std::string plannerType = "BiRRT*";
-          std::vector<std::string> optimizerTypes;
-          bool resetRoadmap = true;
-
         protected:
-          InStatePath (const ProblemConstPtr_t& problem) :
+          InStatePath (const core::ProblemConstPtr_t& problem,
+                const core::RoadmapPtr_t& roadmap) :
             PathPlanner(problem),
-            problem_ (problem),
-            roadmap_(), constraints_(), weak_()
+            problem_ (HPP_STATIC_PTR_CAST(const manipulation::Problem, problem)),
+            roadmap_(roadmap),//HPP_STATIC_PTR_CAST(manipulation::Roadmap, roadmap)),
+            constraints_(), weak_()
           {
             const core::DevicePtr_t& robot = problem_->robot();
             cproblem_ = core::Problem::create(robot);
@@ -80,6 +88,7 @@ namespace hpp {
             for (const core::CollisionObjectPtr_t & obs: problem_->collisionObstacles()) {
               cproblem_->addObstacle(obs);
             }
+            cproblem_->pathProjector(problem->pathProjector());
           }
 
           InStatePath (const InStatePath& other) :
@@ -103,6 +112,13 @@ namespace hpp {
           core::ProblemPtr_t cproblem_;
           core::RoadmapPtr_t roadmap_;
           ConstraintSetPtr_t constraints_;
+
+          double timeOutPathPlanning_ = 0;
+          unsigned long maxIterPathPlanning_ = 0;
+          bool resetRoadmap_ = true;
+          std::string plannerType_ = "BiRRT*";
+          std::vector<std::string> optimizerTypes_;
+
           /// Weak pointer to itself
           InStatePathWkPtr_t weak_;
 
