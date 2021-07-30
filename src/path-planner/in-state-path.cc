@@ -24,6 +24,7 @@
 
 #include <hpp/core/path-vector.hh>
 #include <hpp/core/roadmap.hh>
+#include <hpp/core/edge.hh>
 
 #include <hpp/core/bi-rrt-planner.hh>
 #include <hpp/core/path-planner/k-prm-star.hh>
@@ -126,9 +127,9 @@ namespace hpp {
       void InStatePath::setEdge (const graph::EdgePtr_t& edge)
       {
         constraints_ = edge->pathConstraint();
-        cproblem_->pathValidation(edge->pathValidation());
-        cproblem_->constraints(constraints_);
-        cproblem_->steeringMethod(edge->steeringMethod());
+        leafProblem_->pathValidation(edge->pathValidation());
+        leafProblem_->constraints(constraints_);
+        leafProblem_->steeringMethod(edge->steeringMethod());
       }
 
       void InStatePath::setInit (const ConfigurationPtr_t& qinit)
@@ -136,8 +137,8 @@ namespace hpp {
         if (!constraints_)
           throw std::logic_error("Use setEdge before setInit and setGoal");
         constraints_->configProjector()->rightHandSideFromConfig(*qinit);
-        cproblem_->initConfig(qinit);
-        cproblem_->resetGoalConfigs();
+        leafProblem_->initConfig(qinit);
+        leafProblem_->resetGoalConfigs();
       }
 
       void InStatePath::setGoal (const ConfigurationPtr_t& qgoal)
@@ -147,30 +148,30 @@ namespace hpp {
         ConfigurationPtr_t qgoalc (new Configuration_t (*qgoal));
         constraints_->apply(*qgoalc);
         assert((*qgoal-*qgoalc).isZero());
-        cproblem_->resetGoalConfigs();
-        cproblem_->addGoalConfig(qgoal);
+        leafProblem_->resetGoalConfigs();
+        leafProblem_->addGoalConfig(qgoal);
       }
 
       core::PathVectorPtr_t InStatePath::solve()
       {
         if (!constraints_)
           throw std::logic_error("Use setEdge, setInit and setGoal before solve");
-        if (resetRoadmap_ || !roadmap_)
-          roadmap_ = core::Roadmap::create (cproblem_->distance(), problem_->robot());
+        if (resetRoadmap_ || !leafRoadmap_)
+          leafRoadmap_ = core::Roadmap::create (leafProblem_->distance(), problem_->robot());
         
         core::PathPlannerPtr_t planner;
         // TODO: BiRRT* does not work properly:
         //     - discontinuities due to an algorithmic mistake involving qProj_
         //     - not using path projectors, it should
         if (plannerType_ == "kPRM*")
-          planner = core::pathPlanner::kPrmStar::createWithRoadmap(cproblem_, roadmap_);
+          planner = core::pathPlanner::kPrmStar::createWithRoadmap(leafProblem_, leafRoadmap_);
         else if (plannerType_ == "DiffusingPlanner")
-          planner = core::DiffusingPlanner::createWithRoadmap(cproblem_, roadmap_);
+          planner = core::DiffusingPlanner::createWithRoadmap(leafProblem_, leafRoadmap_);
         else if (plannerType_ == "BiRRT*")
-          planner = core::BiRRTPlanner::createWithRoadmap(cproblem_, roadmap_);
+          planner = core::BiRRTPlanner::createWithRoadmap(leafProblem_, leafRoadmap_);
         else {
           hppDout(warning, "Unknown planner type specified. Setting to default DiffusingPlanner");
-          planner = core::DiffusingPlanner::createWithRoadmap(cproblem_, roadmap_);
+          planner = core::DiffusingPlanner::createWithRoadmap(leafProblem_, leafRoadmap_);
         }
         if (maxIterPathPlanning_)
             planner->maxIterations(maxIterPathPlanning_);
@@ -203,6 +204,27 @@ namespace hpp {
           }
         }
         return path;
+      }
+      
+      const core::RoadmapPtr_t& InStatePath::leafRoadmap() const
+      {
+        return leafRoadmap_;
+      }
+
+      void InStatePath::mergeLeafRoadmapWith(const core::RoadmapPtr_t& roadmap) const {
+        std::map<core::NodePtr_t, core::NodePtr_t> cNode;
+        for (const core::NodePtr_t& node: leafRoadmap_->nodes()) {
+          cNode[node] = roadmap->addNode(node->configuration());
+        }
+        for (const core::EdgePtr_t& edge: leafRoadmap_->edges()) {
+          if (edge->path()->length() == 0)
+            assert (edge->from() == edge->to());
+          else
+            roadmap->addEdges(
+                cNode[edge->from()], cNode[edge->to()], edge->path());
+        }
+        // TODO this is inefficient because the roadmap recomputes the connected
+        // component at every step. A merge function should be added in roadmap.cc
       }
       
     } // namespace pathPlanner

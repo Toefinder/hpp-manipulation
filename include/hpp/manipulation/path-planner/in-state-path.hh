@@ -70,31 +70,34 @@ namespace hpp {
           {}
           virtual core::PathVectorPtr_t solve();
 
+          const core::RoadmapPtr_t& leafRoadmap() const;
+          void mergeLeafRoadmapWith(const core::RoadmapPtr_t& roadmap) const;
+
         protected:
           InStatePath (const core::ProblemConstPtr_t& problem,
                 const core::RoadmapPtr_t& roadmap) :
             PathPlanner(problem),
             problem_ (HPP_STATIC_PTR_CAST(const manipulation::Problem, problem)),
-            roadmap_(roadmap),//HPP_STATIC_PTR_CAST(manipulation::Roadmap, roadmap)),
+            leafRoadmap_(roadmap),
             constraints_(), weak_()
           {
             const core::DevicePtr_t& robot = problem_->robot();
-            cproblem_ = core::Problem::create(robot);
-            cproblem_->setParameter
+            leafProblem_ = core::Problem::create(robot);
+            leafProblem_->setParameter
               ("kPRM*/numberOfNodes", core::Parameter((size_type) 2000));
-            cproblem_->clearConfigValidations();
-            cproblem_->addConfigValidation(core::CollisionValidation::create(robot));
-            cproblem_->addConfigValidation(core::JointBoundValidation::create(robot));
+            leafProblem_->clearConfigValidations();
+            leafProblem_->addConfigValidation(core::CollisionValidation::create(robot));
+            leafProblem_->addConfigValidation(core::JointBoundValidation::create(robot));
             for (const core::CollisionObjectPtr_t & obs: problem_->collisionObstacles()) {
-              cproblem_->addObstacle(obs);
+              leafProblem_->addObstacle(obs);
             }
-            cproblem_->pathProjector(problem->pathProjector());
+            leafProblem_->pathProjector(problem->pathProjector());
           }
 
           InStatePath (const InStatePath& other) :
             PathPlanner(other.problem_),
-            problem_(other.problem_), cproblem_(other.cproblem_),
-            roadmap_ (other.roadmap_),
+            problem_(other.problem_), leafProblem_(other.leafProblem_),
+            leafRoadmap_ (other.leafRoadmap_),
             constraints_(other.constraints_),
             weak_ ()
           {}
@@ -109,8 +112,8 @@ namespace hpp {
           // a pointer to the problem used to create the InStatePath instance
           ProblemConstPtr_t problem_;
           // a new problem created for this InStatePath instance
-          core::ProblemPtr_t cproblem_;
-          core::RoadmapPtr_t roadmap_;
+          core::ProblemPtr_t leafProblem_;
+          core::RoadmapPtr_t leafRoadmap_;
           ConstraintSetPtr_t constraints_;
 
           double timeOutPathPlanning_ = 0;

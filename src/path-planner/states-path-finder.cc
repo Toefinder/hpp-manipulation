@@ -136,7 +136,7 @@ namespace hpp {
         };
         typedef std::queue<state_with_depth_ptr_t> Queue_t;
         std::size_t maxDepth;
-        StateMap_t parent1; // TODO, parent2;
+        StateMap_t parent1;
         Queue_t queue1;
 
         const state_with_depth& getParent(const state_with_depth_ptr_t& _p) const
@@ -263,12 +263,6 @@ namespace hpp {
 
             // Avoid identical consecutive transition
             if (transition == parent.e) continue;
-
-            // TODO
-            // If (transition->to() == d.s2) check if this list is feasible.
-            // - If a constraint with non-constant right hand side is present
-            //   in all transitions, then the rhs from d.q1 and d.q2 should be
-            //   equal
 
             // Insert parent
             d.queue1.push (
@@ -870,13 +864,6 @@ namespace hpp {
         if (status == Solver_t::SUCCESS) {
           assert (checkWaypointRightHandSide(j));
           core::ConfigValidationsPtr_t configValidations = problem_->configValidations();
-          // TODO ne pas prendre directement CE configValidation mais en faire une copie par 
-          // solver, pour modifier différemment les securityMargins pour chacun.
-          // Ces securityMargins doivent être le max des matrices des deux edge qui
-          // entourent la configuration.
-          // cf manipulation/graph/edge.hh
-          // cf core/collision-validation.hh
-          // cf core/obstacle-user.hh
           core::ConfigValidationsPtr_t configValidations2 = core::ConfigValidations::create();
           core::CollisionValidationPtr_t colValidation = core::CollisionValidation::create(problem()->robot());
           const graph::Edges_t& edges = lastBuiltTransitions_;
@@ -1055,10 +1042,10 @@ namespace hpp {
                     hppDout (warning, " Solution " << idxSol << ": solved configurations list");
                     return path;
                   } else {
-                    hppDout (warning, " Failed solution " << idxSol << " at step 5 (solve opt pb)");
+                    hppDout (info, " Failed solution " << idxSol << " at step 5 (solve opt pb)");
                   }
                 } else {
-                  hppDout (warning, " Failed solution " << idxSol << " at step 4 (analyse opt pb)");
+                  hppDout (info, " Failed solution " << idxSol << " at step 4 (analyse opt pb)");
                 }
               } else {
                 hppDout (info, " Failed solution " << idxSol << " at step 3 (build opt pb)");
@@ -1084,8 +1071,10 @@ namespace hpp {
           InStatePathPtr_t planner = InStatePath::create(problem_);
           planner->addOptimizerType("Graph-RandomShortcut");
           planner->plannerType("DiffusingPlanner");
-          planner->maxIterPlanner(1000);
-          planner->timeOutPlanner(5.0);
+          planner->maxIterPlanner(problem_->getParameter
+                ("StatesPathFinder/innerPlannerMaxIterations").intValue());
+          planner->timeOutPlanner(problem_->getParameter
+                ("StatesPathFinder/innerPlannerTimeOut").floatValue());
           planner->resetRoadmap(true);
           ConfigurationPtr_t q1 (new Configuration_t (configSolved(i)));
           ConfigurationPtr_t q2 (new Configuration_t (configSolved(i+1)));
@@ -1128,8 +1117,10 @@ namespace hpp {
         InStatePathPtr_t planner = InStatePath::create(problem_);
         planner->addOptimizerType("Graph-RandomShortcut"); 
         planner->plannerType("DiffusingPlanner");
-        planner->maxIterPlanner(1000);
-        planner->timeOutPlanner(5.0);
+        planner->maxIterPlanner(problem_->getParameter
+              ("StatesPathFinder/innerPlannerMaxIterations").intValue());
+        planner->timeOutPlanner(problem_->getParameter
+              ("StatesPathFinder/innerPlannerTimeOut").floatValue());
         planner->resetRoadmap(true);
 
         while (true) {
@@ -1188,20 +1179,21 @@ namespace hpp {
         planner_ = InStatePath::create(problem_);
         planner_->addOptimizerType("Graph-RandomShortcut");
         planner_->plannerType("DiffusingPlanner");
-        planner_->maxIterPlanner(1000);
-        planner_->timeOutPlanner(2.0);
+        planner_->maxIterPlanner(problem_->getParameter
+              ("StatesPathFinder/innerPlannerMaxIterations").intValue());
+        planner_->timeOutPlanner(problem_->getParameter
+              ("StatesPathFinder/innerPlannerTimeOut").floatValue());
         planner_->resetRoadmap(true);
       }
 
       void StatesPathFinder::oneStep ()
       {
-        //TODO : le InStatePlanner x BiRRT* causes discontinuities, possible
-        //       to see them and resolve until there's not but it's not normal
         if (idxConfigList_ == 0) {
           solution_ = core::PathVector::create (
             problem()->robot()->configSize(), problem()->robot()->numberDof());
           skipColAnalysis_ = (nTryConfigList_ >= 1); // already passed, don't redo it
           configList_ = computeConfigList(*q1_, *q2_);
+          roadmap()->clear();
           if (configList_.size() <= 1) { // max depth reached
             reset();
             return;
@@ -1221,26 +1213,8 @@ namespace hpp {
           core::PathVectorPtr_t aux = planner_->solve();
           for (std::size_t r = 0; r < aux->numberPaths()-1; r++)
             assert(aux->pathAtRank(r)->end() == aux->pathAtRank(r+1)->initial());
-          /*
-          while (true) {
-            bool ok = true;
-            for (std::size_t r = 0; r < aux->numberPaths()-1; r++) {
-              if (aux->pathAtRank(r)->end() != aux->pathAtRank(r+1)->initial()) {
-                hppDout(warning, "discontinuity at transition " << idxConfigList_
-                        << " between configs "
-                        << "\nq1=" << pinocchio::displayConfig(aux->pathAtRank(r)->end())
-                        << "\nq2=" << pinocchio::displayConfig(aux->pathAtRank(r+1)->initial())
-                        << "\nafter rank r=" << r << " out of " << aux->numberPaths() 
-                );
-                ok = false;
-                break;
-              }
-            }
-            if (ok) break;
-            break; // remove this
-            aux = planner_->solve();
-          } */
           solution_->concatenate(aux);
+          planner_->mergeLeafRoadmapWith(roadmap());
 
           idxConfigList_++;
           if (idxConfigList_ == configList_.size()-1) {
@@ -1270,16 +1244,6 @@ namespace hpp {
 
       core::PathVectorPtr_t StatesPathFinder::solve ()
       {
-        /*
-        assert(problem_);
-        q1_ = problem_->initConfig();
-        assert(q1_);
-        core::Configurations_t q2s = problem_->goalConfigs();
-        assert(q2s.size());
-        q2_ =  q2s[0];
-        return buildPath(*q1_, *q2_);
-        /*/
-
         namespace bpt = boost::posix_time;
 
         interrupt_ = false;
@@ -1299,7 +1263,6 @@ namespace hpp {
           if (interrupt_) throw std::runtime_error ("Interruption");
         }
         return solution_;
-        //*/
       }
 
       std::vector<std::string> StatesPathFinder::constraintNamesFromSolverAtWaypoint
@@ -1353,6 +1316,18 @@ namespace hpp {
             "Number of solutions with a given states list to try to build a"
             "continuous path from, before skipping to the next states list",
             Parameter((size_type)5)));
+      core::Problem::declareParameter(ParameterDescription(Parameter::FLOAT,
+            "StatesPathFinder/innerPlannerTimeOut",
+            "This will set ::timeOut accordingly in the inner"
+            "planner used for building a path after intermediate"
+            "configurations have been found",
+            Parameter(2.0)));
+      core::Problem::declareParameter(ParameterDescription(Parameter::INT,
+            "StatesPathFinder/innerPlannerMaxIterations",
+            "This will set ::maxIterations accordingly in the inner"
+            "planner used for building a path after intermediate"
+            "configurations have been found",
+            Parameter((size_type)1000)));
       HPP_END_PARAMETER_DECLARATION(StatesPathFinder)
     } // namespace pathPlanner
   } // namespace manipulation
