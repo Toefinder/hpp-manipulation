@@ -1049,7 +1049,17 @@ namespace hpp {
           }
         }
         // initialize the right hand side with the initial config
+        analyseSolver.errorThreshold(_problem->getParameter
+            ("StatesPathFinder/errorThreshold").floatValue());
         analyseSolver.rightHandSideFromConfig(*q1_);
+        for (auto constraint: analyseSolver.constraints()) {
+          vector_t error(6);
+          bool constraintFound;
+          if (!analyseSolver.isConstraintSatisfied(constraint, *q1_, error, constraintFound)) {
+            hppDout(info, "Initial configuration does not satisfy constraint "
+                << constraint->function().name());
+          }
+        }
         if (analyseSolver.isSatisfied(*q1_)) {
           return true;
         }
