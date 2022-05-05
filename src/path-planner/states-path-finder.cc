@@ -1053,7 +1053,7 @@ namespace hpp {
             ("StatesPathFinder/errorThreshold").floatValue());
         analyseSolver.rightHandSideFromConfig(*q1_);
         for (auto constraint: analyseSolver.constraints()) {
-          vector_t error(6);
+          vector_t error(constraint->function().outputSpace()->nv());
           bool constraintFound;
           if (!analyseSolver.isConstraintSatisfied(constraint, *q1_, error, constraintFound)) {
             hppDout(info, "Initial configuration does not satisfy constraint "
@@ -1139,10 +1139,6 @@ namespace hpp {
           // if wp is not the goal node, check collision based on following edge
           if (j < edges.size()-1 && !edges[j+1]->pathValidation()->validate (
               optData_->waypoint.col (j), report)) {
-            //hppDout(warning, maxmat);
-            //hppDout(warning, pinocchio::displayConfig(optData_->waypoint.col (j)));
-            //hppDout(warning, *report);
-            //return 4;
             return SolveStepStatus::COLLISION_AFTER;
           }
           return SolveStepStatus::VALID_SOLUTION;
