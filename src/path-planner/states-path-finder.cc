@@ -176,9 +176,6 @@ namespace hpp {
         // can be multiple if goal is defined as a set of constraints
         graph::States_t s2;
 
-        // index of the transition list
-        size_t idxSol;
-
         // Datas for findNextTransitions
         struct state_with_depth {
           StatePtr_t s;
@@ -210,6 +207,19 @@ namespace hpp {
         StateMap_t parent1;
         // store a vector of pointers to the end state of each transition list
         state_with_depths_t solutions;
+        // index of the transition list to try now
+        size_t idxSol;
+        // maximum index of the transition list we have tried so far
+        size_t maxIdxSol;
+        // number of tries so far
+        size_t numTries;
+        // whether this is the first time trying the transition list idx
+        bool firstTry;
+        // store a vector of indexes of transition lists that have passed
+        // the analysis to potentially produce configuration lists
+        std::vector<size_t> listIdxSol;
+        // index of transition list in `listIdxSol`
+        size_t idxInList;
         // the frontier of the graph search
         // consists states that have not been expanded on
         Deque_t queue1;
@@ -378,6 +388,33 @@ namespace hpp {
         // return true if search is exhausted and goal state not found
         if (!done) return true;
         return false;
+      }
+
+      void StatesPathFinder::nextTransitionListIdx (
+          GraphSearchData& d, std::size_t& idxSol) const
+      {
+        if (d.idxInList == d.listIdxSol.size()) {
+          // try new solution
+          d.maxIdxSol++;
+          idxSol = d.maxIdxSol;
+          d.firstTry = true;
+          d.idxInList = 0;
+        } else {
+          // try a previous, potentially valid solution
+          idxSol = d.listIdxSol[d.idxInList];
+          d.firstTry = false;
+          d.idxInList++;
+        }
+        d.numTries++;
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t idx: d.listIdxSol) {
+          oss << idx;
+          oss << ", ";
+        }
+        oss << "]";
+        hppDout (info, " List of idx of potential solutions " << oss.str());
+        hppDout (info, " Total numTries: " << d.numTries << " Solution: " << idxSol);
       }
 
       Edges_t StatesPathFinder::getTransitionList (
@@ -1306,7 +1343,12 @@ namespace hpp {
         bool maxDepthReached;
         while (!(maxDepthReached = findTransitions (d))) { // mut
           // if there is a working sequence, try it first before getting another transition list
-          Edges_t transitions = (nTryConfigList_ > 0)? lastBuiltTransitions_ : getTransitionList (d, idxSol); // const, const
+          Edges_t transitions;
+          if (nTryConfigList_ > 0) {
+            transitions = lastBuiltTransitions_;
+          } else {
+            transitions = getTransitionList (d, idxSol);
+          } // const, const
           while (! transitions.empty()) {
 #ifdef HPP_DEBUG
             std::ostringstream ss;
@@ -1324,7 +1366,11 @@ namespace hpp {
 
             if (buildOptimizationProblem (transitions)) {
               lastBuiltTransitions_ = transitions;
-              if (nTryConfigList_ > 0 || analyseOptimizationProblem2 (transitions, problem())) {
+              if (!d.firstTry || nTryConfigList_ > 0 || analyseOptimizationProblem2 (transitions, problem())) {
+                if (d.firstTry) {
+                  d.listIdxSol.push_back(idxSol);
+                  d.firstTry = false;
+                }
                 if (solveOptimizationProblem ()) {
                   core::Configurations_t path = getConfigList ();
                   hppDout (warning, " Solution " << idxSol << ": solved configurations list");
@@ -1338,7 +1384,8 @@ namespace hpp {
             } else {
               hppDout (info, " Failed solution " << idxSol << " at step 3 (build opt pb)");
             }
-            transitions = getTransitionList(d, ++idxSol);
+            nextTransitionListIdx(d, idxSol);
+            transitions = getTransitionList(d, idxSol);
             // reset of the number of tries for a sequence
             nTryConfigList_ = 0;
           }

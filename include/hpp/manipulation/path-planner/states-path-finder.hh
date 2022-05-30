@@ -183,6 +183,11 @@ namespace hpp {
           bool findTransitions (GraphSearchData& data) const;
 
           /// Step 2 of the algorithm
+          // Function to get next index of transition list to try.
+          // Custom logic allows re-attempting previous transition lists
+          void nextTransitionListIdx (GraphSearchData& data, std::size_t& i) const;
+
+          // Function to retrieve full transition list from the index
           graph::Edges_t getTransitionList (const GraphSearchData& data, const std::size_t& i) const;
 
           /// Step 3 of the algorithm
