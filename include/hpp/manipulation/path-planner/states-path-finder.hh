@@ -28,6 +28,7 @@
 
 # include <hpp/core/validation-report.hh>
 # include <hpp/core/config-validations.hh>
+# include <hpp/core/joint-bound-validation.hh>
 
 # include <hpp/core/path-planner.hh>
 
@@ -145,6 +146,8 @@ namespace hpp {
             COLLISION_BEFORE,
             /// Solution has collision in edge going from the waypoint
             COLLISION_AFTER,
+            /// Solution violates joint bounds
+            EXCEED_JOINT_BOUNDS,
           };
 
           SolveStepStatus solveStep(std::size_t wp);
@@ -225,6 +228,9 @@ namespace hpp {
           ProblemConstPtr_t problem_;
           /// Path planning problem in each leaf.
           core::ProblemPtr_t inStateProblem_;
+
+          /// Joint bound validation.
+          core::JointBoundValidationPtr_t jointBoundValidation_;
 
           /// Vector of parameterizable edge numerical constraints
           NumericalConstraints_t constraints_;

@@ -111,6 +111,7 @@ namespace hpp {
       {
         gatherGraphConstraints ();
         inStateProblem_ = core::Problem::create(problem_->robot());
+        jointBoundValidation_ = core::JointBoundValidation::create(problem_->robot());
         core::PathProjectorPtr_t pathProjector
           (core::pathProjector::Progressive::create
            (inStateProblem_, 1e-2));
@@ -1139,6 +1140,10 @@ namespace hpp {
             //return 4;
             return SolveStepStatus::COLLISION_AFTER;
           }
+          if (!jointBoundValidation_->validate(
+            optData_->waypoint.col (j), report)) {
+              return SolveStepStatus::EXCEED_JOINT_BOUNDS;
+          }
           return SolveStepStatus::VALID_SOLUTION;
         }
         return SolveStepStatus::NO_SOLUTION;
@@ -1261,6 +1266,7 @@ namespace hpp {
           switch (out) {
           case SolveStepStatus::VALID_SOLUTION: // Valid solution, go to next waypoint
             wp++; break;
+          case SolveStepStatus::EXCEED_JOINT_BOUNDS:
           case SolveStepStatus::NO_SOLUTION: // Bad solve status, considered usual so has higher threshold before going back to first waypoint
             nBadSolves++; break;
           case SolveStepStatus::COLLISION_BEFORE: // Collision. If that happens too much, go back to first waypoint
