@@ -685,7 +685,7 @@ namespace hpp {
         (const graph::Edges_t& transitions)
       {
         OptimizationData& d = *optData_;
-        if (d.N == 0) return false;
+        if (d.N == 0) return true; // no waypoint
         d.M_status.resize (constraints_.size (), d.N);
         d.M_status.fill (OptimizationData::ABSENT);
         d.M_rhs.resize (constraints_.size (), d.N);
@@ -1205,14 +1205,14 @@ namespace hpp {
             }
             if (nBadSolves >= nBadSolvesMax) {
               hppDout (warning, " Solution " << graphData_->idxSol << ": too many bad solve statuses. Resetting back to WP1");
-            }            
+            }
 #endif
 
             continue;
 
           } else if (nTriesDone[wp] >= nTriesMax) {
             // enough tries for a waypoint: backtrack
-            
+
             // update the longest valid sequence of waypoints solved
             if (wp -1 > wp_max) {
               // update the maximum index of valid waypoint
@@ -1539,6 +1539,9 @@ namespace hpp {
         GraphSearchData::state_with_depth_ptr_t _state = d.queue1.front();
         GraphSearchData::state_with_depth_ptr_t _endState = d.addParent (_state, loopEdges[0]);
         d.solutions.push_back(_endState);
+
+        // try connecting initial and final configurations directly
+        if (!goalDefinedByConstraints_) PathPlanner::tryConnectInitAndGoals();
       }
 
       std::vector<std::string> StatesPathFinder::constraintNamesFromSolverAtWaypoint
