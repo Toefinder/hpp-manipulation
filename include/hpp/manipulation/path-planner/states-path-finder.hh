@@ -108,13 +108,13 @@ namespace hpp {
 
           static StatesPathFinderPtr_t create (
             const core::ProblemConstPtr_t& problem);
-            
+
           static StatesPathFinderPtr_t createWithRoadmap (
             const core::ProblemConstPtr_t& problem,
             const core::RoadmapPtr_t& roadmap);
 
           StatesPathFinderPtr_t copy () const;
-          
+
           /// create a vector of configurations between two configurations
           /// \param q1 initial configuration
           /// \param q2 pointer to final configuration, NULL if goal is
@@ -209,6 +209,8 @@ namespace hpp {
           bool solveOptimizationProblem ();
 
           /// Step 6 of the algorithm
+          /// Get list of configurations from solution of optimization problem
+          /// Note that very close configurations will be merged
           core::Configurations_t getConfigList () const;
 
           /// Functions used in assert statements
@@ -264,7 +266,7 @@ namespace hpp {
 
       }; // class StatesPathFinder
       /// \}
-      
+
     } // namespace pathPlanner
   } // namespace manipulation
 } // namespace hpp

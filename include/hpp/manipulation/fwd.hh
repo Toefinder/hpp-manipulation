@@ -72,7 +72,7 @@ namespace hpp {
     typedef RoadmapNode* RoadmapNodePtr_t;
     typedef std::vector<RoadmapNodePtr_t> RoadmapNodes_t;
     HPP_PREDEF_CLASS (ConnectedComponent);
-    typedef shared_ptr<ConnectedComponent> ConnectedComponentPtr_t; 
+    typedef shared_ptr<ConnectedComponent> ConnectedComponentPtr_t;
     HPP_PREDEF_CLASS (LeafConnectedComp);
     typedef shared_ptr<LeafConnectedComp> LeafConnectedCompPtr_t;
     typedef shared_ptr<const LeafConnectedComp>

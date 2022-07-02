@@ -48,6 +48,7 @@
 #include <hpp/core/problem-target/goal-configurations.hh>
 #include <hpp/core/path-optimization/random-shortcut.hh>
 #include <hpp/core/path-validation.hh>
+#include <hpp/core/distance.hh>
 
 #include <hpp/manipulation/constraint-set.hh>
 
@@ -1278,6 +1279,21 @@ namespace hpp {
           ConfigurationPtr_t q2 (new Configuration_t (d.q2));
           pv.push_back(q2);
         }
+        // Merge configurations: if two successive configurations are very
+        // close, make one of them the same as the other
+        // This is to prevent the case when straight interpolation sees the
+        // distance as 0 but two configs are different.
+        value_type threshold = problem_->getParameter
+            ("StatesPathFinder/mergeConfigThreshold").floatValue();
+        for (std::size_t i = 1; i < pv.size(); ++i) {
+          ConfigurationPtr_t& q1 = pv[i-1];
+          ConfigurationPtr_t& q2 = pv[i];
+          value_type length = (*problem_->distance())(*q1, *q2);
+          if (length < threshold) {
+            q2 = q1;
+          }
+        }
+
         return pv;
       }
 
@@ -1580,6 +1596,12 @@ namespace hpp {
             "Error threshold of the Newton Raphson algorithm."
             "Should be at most the same as error threshold in constraint graph",
             Parameter(1e-4)));
+      core::Problem::declareParameter(ParameterDescription(Parameter::FLOAT,
+            "StatesPathFinder/mergeConfigThreshold",
+            "Threshold to merge two configurations."
+            "For two configs with distance smaller than this threshold,"
+            "one of them will be made to be the same as the other",
+            Parameter(1e-10)));
       core::Problem::declareParameter(ParameterDescription(Parameter::INT,
             "StatesPathFinder/nTriesUntilBacktrack",
             "Number of tries when sampling configurations before backtracking"
